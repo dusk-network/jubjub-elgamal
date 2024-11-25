@@ -51,9 +51,9 @@ To decrypt the ciphertext $(c_1, c_2)$ Bob will use his secret-key $sk_B$:
 - Compute $c_2 - c_1 * sk_B = m$
 
 This is true because:
-$$
+```math
 c_2 - c_1 * sk_B = m + PK_B * r - (r * G * sk_B) = m + PK_B * r - PK_B * r = m
-$$
+```
 
 ## Example
 
