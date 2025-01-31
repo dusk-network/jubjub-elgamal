@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Change the in-circuit decryption to use `component_sub_point` [#4]
+
 [0.1.0]
 
 ### Added
@@ -14,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add initial implementation [#1]
 
 <!-- ISSUES -->
+[#4]: https://github.com/dusk-network/jubjub-elgamal/issues/4
 [#1]: https://github.com/dusk-network/jubjub-elgamal/issues/1
 
 <!-- VERSIONS -->
