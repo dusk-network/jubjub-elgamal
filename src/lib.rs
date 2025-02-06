@@ -50,7 +50,7 @@ pub fn decrypt(
 /// decrypting. These gadgets can be used as part of a larger circuit.
 #[cfg(feature = "zk")]
 pub mod zk {
-    use dusk_jubjub::{JubJubScalar, GENERATOR};
+    use dusk_jubjub::GENERATOR;
     use dusk_plonk::prelude::*;
 
     /// Uses the given `public_key` and a fresh random number `r` to encrypt a
@@ -88,10 +88,8 @@ pub mod zk {
         ciphertext_2: WitnessPoint,
     ) -> WitnessPoint {
         let c1_sk = composer.component_mul_point(secret_key, ciphertext_1);
-        let neg_one = composer.append_constant(-JubJubScalar::one());
-        let neg_c1_sk = composer.component_mul_point(neg_one, c1_sk);
 
         // return plaintext
-        composer.component_add_point(ciphertext_2, neg_c1_sk)
+        composer.component_sub_point(ciphertext_2, c1_sk)
     }
 }
