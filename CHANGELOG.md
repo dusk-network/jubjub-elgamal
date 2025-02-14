@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Change methods to return shared_key and allow decryption from it [#7]
+- Change encryption gadget to include bad encryption check [#8]
+
 ## [0.2.0] - 2025-02-06
 
 ### Changed
@@ -22,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add initial implementation [#1]
 
 <!-- ISSUES -->
+[#8]: https://github.com/dusk-network/jubjub-elgamal/issues/8
+[#7]: https://github.com/dusk-network/jubjub-elgamal/issues/7
 [#4]: https://github.com/dusk-network/jubjub-elgamal/issues/4
 [#1]: https://github.com/dusk-network/jubjub-elgamal/issues/1
 

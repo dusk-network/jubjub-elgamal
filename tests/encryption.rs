@@ -193,7 +193,7 @@ mod zk {
 
         let r = JubJubScalar::random(&mut rng);
 
-        // don't involved in this test
+        // not involved in this test
         let c1 = message;
         let c2 = message;
 
