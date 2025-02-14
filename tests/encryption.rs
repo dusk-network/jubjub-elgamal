@@ -21,7 +21,7 @@ fn encrypt_decrypt() {
 
     // Encrypt using a fresh random value 'blinder'
     let blinder = JubJubScalar::random(&mut rng);
-    let (c1, c2) = encrypt(&pk, &message, &blinder);
+    let (c1, c2, _) = encrypt(&pk, &message, &blinder);
 
     // Assert decryption
     let dec_message = decrypt(&sk, &(c1, c2));
@@ -93,7 +93,7 @@ mod zk {
             let r = composer.append_witness(self.r);
 
             // encrypt plaintext using the public key
-            let (ciphertext_1, ciphertext_2) =
+            let (ciphertext_1, ciphertext_2, _) =
                 encrypt_gadget(composer, public_key, plaintext, r)?;
 
             // only for the 'encrypt_decrypt' test
@@ -133,7 +133,7 @@ mod zk {
 
         let message = GENERATOR_EXTENDED * JubJubScalar::from(1234u64);
         let r = JubJubScalar::random(&mut rng);
-        let (c1, c2) = encrypt(&pk, &message, &r);
+        let (c1, c2, _) = encrypt(&pk, &message, &r);
 
         let pp = PublicParameters::setup(1 << CAPACITY, &mut rng).unwrap();
 

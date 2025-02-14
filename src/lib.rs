@@ -16,17 +16,19 @@ use dusk_jubjub::{JubJubExtended, JubJubScalar, GENERATOR};
 /// plaintext [`JubJubExtended`].
 ///
 /// ## Return
-/// Returns the ciphertext tuple `(JubJubExtended, JubJubExtended)`.
+/// Returns the ciphertext plus `shared_key` tuple
+/// `(JubJubExtended, JubJubExtended, JubJubExtended)`.
 #[must_use]
 pub fn encrypt(
     public_key: &JubJubExtended,
     plaintext: &JubJubExtended,
     r: &JubJubScalar,
-) -> (JubJubExtended, JubJubExtended) {
+) -> (JubJubExtended, JubJubExtended, JubJubExtended) {
     let ciphertext_1 = GENERATOR * r;
-    let ciphertext_2 = plaintext + public_key * r;
+    let shared_key = public_key * r;
+    let ciphertext_2 = plaintext + shared_key;
 
-    (ciphertext_1, ciphertext_2)
+    (ciphertext_1, ciphertext_2, shared_key)
 }
 
 /// Uses the given `secret_key` to decrypt the given `ciphertext` to the
@@ -58,7 +60,8 @@ pub mod zk {
     /// plonk-circuit.
     ///
     /// # Return
-    /// Returns the ciphertext tuple `(WitnessPoint, WitnessPoint)`.
+    /// Returns the ciphertext plus `shared_key` tuple
+    /// `(WitnessPoint, WitnessPoint, WitnessPoint)`.
     ///
     /// # Errors
     /// This function will error if `r` is not a valid jubjub-scalar.
@@ -69,16 +72,16 @@ pub mod zk {
         public_key: WitnessPoint,
         plaintext: WitnessPoint,
         r: Witness,
-    ) -> Result<(WitnessPoint, WitnessPoint), Error> {
-        let r_point = composer.component_mul_point(r, public_key);
+    ) -> Result<(WitnessPoint, WitnessPoint, WitnessPoint), Error> {
+        let shared_key = composer.component_mul_point(r, public_key);
         let ciphertext_1 = composer.component_mul_generator(r, GENERATOR)?;
-        let ciphertext_2 = composer.component_add_point(plaintext, r_point);
+        let ciphertext_2 = composer.component_add_point(plaintext, shared_key);
 
         // we check if the original message can be recovered
-        let dec = composer.component_sub_point(ciphertext_2, r_point);
+        let dec = composer.component_sub_point(ciphertext_2, shared_key);
         composer.assert_equal_point(dec, plaintext);
 
-        Ok((ciphertext_1, ciphertext_2))
+        Ok((ciphertext_1, ciphertext_2, shared_key))
     }
 
     /// Uses the given `secret_key` to decrypt the given `ciphertext` to the
