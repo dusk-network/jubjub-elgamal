@@ -59,7 +59,7 @@ c_2 - c_1 * sk_B = m + PK_B * r - (r * G * sk_B) = m + PK_B * r - PK_B * r = m
 
 A basic example demonstrating how to encrypt and decrypt a message using ElGamal:
 ```rust
-use dusk_jubjub::{JubJubScalar, GENERATOR_EXTENDED};
+use dusk_jubjub::{JubJubScalar, GENERATOR, GENERATOR_EXTENDED};
 use ff::Field;
 use jubjub_elgamal::{decrypt, encrypt, DecryptionOrigin};
 use rand::rngs::StdRng;
@@ -74,7 +74,7 @@ let message = GENERATOR_EXTENDED * JubJubScalar::from(1234u64);
 
 // Encrypt using a fresh random value 'blinder'
 let r = JubJubScalar::random(&mut rng);
-let (c1, c2, _) = encrypt(&pk, &message, &r);
+let (c1, c2, _) = encrypt(&pk, &message, &GENERATOR, &r);
 
 // Assert decryption
 let dec_message = decrypt(&DecryptionOrigin::FromSecretKey(sk), &(c1, c2));

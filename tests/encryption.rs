@@ -4,7 +4,7 @@
 //
 // Copyright (c) DUSK NETWORK. All rights reserved.
 
-use dusk_jubjub::{JubJubScalar, GENERATOR_EXTENDED};
+use dusk_jubjub::{JubJubScalar, GENERATOR, GENERATOR_EXTENDED};
 use ff::Field;
 use jubjub_elgamal::{decrypt, encrypt, DecryptionOrigin};
 use rand::rngs::StdRng;
@@ -21,7 +21,7 @@ fn encrypt_decrypt() {
 
     // Encrypt using a fresh random value 'blinder'
     let blinder = JubJubScalar::random(&mut rng);
-    let (c1, c2, shared_key) = encrypt(&pk, &message, &blinder);
+    let (c1, c2, shared_key) = encrypt(&pk, &message, &GENERATOR, &blinder);
 
     // Assert decryption using the secret key
     let dec_message = decrypt(&DecryptionOrigin::FromSecretKey(sk), &(c1, c2));
@@ -42,7 +42,8 @@ fn encrypt_decrypt() {
 #[cfg(feature = "zk")]
 mod zk {
     use dusk_jubjub::{
-        JubJubAffine, JubJubExtended, JubJubScalar, GENERATOR_EXTENDED,
+        JubJubAffine, JubJubExtended, JubJubScalar, GENERATOR,
+        GENERATOR_EXTENDED,
     };
     use dusk_plonk::prelude::*;
     use ff::Field;
@@ -55,7 +56,7 @@ mod zk {
     use rand::SeedableRng;
 
     static LABEL: &[u8; 12] = b"dusk-network";
-    const CAPACITY: usize = 13; // capacity required for the setup
+    const CAPACITY: usize = 14; // capacity required for the setup
 
     #[derive(Default, Debug)]
     pub struct ElGamalCircuit<const MUST_PASS: bool> {
@@ -101,7 +102,7 @@ mod zk {
 
             // encrypt plaintext using the public key
             let (ciphertext_1, ciphertext_2, shared_key) =
-                encrypt_gadget(composer, public_key, plaintext, r)?;
+                encrypt_gadget(composer, public_key, plaintext, None, r)?;
 
             // only for the 'encrypt_decrypt' test
             if MUST_PASS {
@@ -134,6 +135,28 @@ mod zk {
                     ciphertext_2,
                 );
                 composer.assert_equal_point(dec_plaintext, plaintext);
+
+                // encrypt / decrypt plaintext using custom generator
+                let custom_gen = composer.append_point(
+                    GENERATOR_EXTENDED * JubJubScalar::from(1234u64),
+                );
+                let custom_pk =
+                    composer.component_mul_point(secret_key, custom_gen);
+                let (custom_c1, custom_c2, _) = encrypt_gadget(
+                    composer,
+                    custom_pk,
+                    plaintext,
+                    Some(custom_gen),
+                    r,
+                )?;
+
+                let custom_dec_plaintext = decrypt_gadget(
+                    composer,
+                    &DecryptionOriginZK::FromSecretKey(secret_key),
+                    custom_c1,
+                    custom_c2,
+                );
+                composer.assert_equal_point(custom_dec_plaintext, plaintext);
             }
 
             Ok(())
@@ -149,7 +172,7 @@ mod zk {
 
         let message = GENERATOR_EXTENDED * JubJubScalar::from(1234u64);
         let r = JubJubScalar::random(&mut rng);
-        let (c1, c2, _) = encrypt(&pk, &message, &r);
+        let (c1, c2, _) = encrypt(&pk, &message, &GENERATOR, &r);
 
         let pp = PublicParameters::setup(1 << CAPACITY, &mut rng).unwrap();
 

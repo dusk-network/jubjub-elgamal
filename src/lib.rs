@@ -10,7 +10,7 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(clippy::pedantic)]
 
-use dusk_jubjub::{JubJubExtended, JubJubScalar, GENERATOR};
+use dusk_jubjub::{JubJubAffine, JubJubExtended, JubJubScalar};
 
 /// Enumeration used to decrypt ciphertexts
 pub enum DecryptionOrigin {
@@ -30,9 +30,10 @@ pub enum DecryptionOrigin {
 pub fn encrypt(
     public_key: &JubJubExtended,
     plaintext: &JubJubExtended,
+    generator: &JubJubAffine,
     r: &JubJubScalar,
 ) -> (JubJubExtended, JubJubExtended, JubJubExtended) {
-    let ciphertext_1 = GENERATOR * r;
+    let ciphertext_1 = generator * r;
     let shared_key = public_key * r;
     let ciphertext_2 = plaintext + shared_key;
 
@@ -94,10 +95,15 @@ pub mod zk {
         composer: &mut Composer,
         public_key: WitnessPoint,
         plaintext: WitnessPoint,
+        generator: Option<WitnessPoint>,
         r: Witness,
     ) -> Result<(WitnessPoint, WitnessPoint, WitnessPoint), Error> {
+        let ciphertext_1 = match generator {
+            Some(generator) => composer.component_mul_point(r, generator),
+            None => composer.component_mul_generator(r, GENERATOR)?,
+        };
+
         let shared_key = composer.component_mul_point(r, public_key);
-        let ciphertext_1 = composer.component_mul_generator(r, GENERATOR)?;
         let ciphertext_2 = composer.component_add_point(plaintext, shared_key);
 
         // we check if the original message can be recovered
