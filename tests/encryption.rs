@@ -6,7 +6,7 @@
 
 use dusk_jubjub::{JubJubScalar, GENERATOR_EXTENDED};
 use ff::Field;
-use jubjub_elgamal::{decrypt, encrypt};
+use jubjub_elgamal::{decrypt, encrypt, DecryptionOrigin};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
@@ -21,15 +21,21 @@ fn encrypt_decrypt() {
 
     // Encrypt using a fresh random value 'blinder'
     let blinder = JubJubScalar::random(&mut rng);
-    let (c1, c2, _) = encrypt(&pk, &message, &blinder);
+    let (c1, c2, shared_key) = encrypt(&pk, &message, &blinder);
 
-    // Assert decryption
-    let dec_message = decrypt(&sk, &(c1, c2));
+    // Assert decryption using the secret key
+    let dec_message = decrypt(&DecryptionOrigin::FromSecretKey(sk), &(c1, c2));
     assert_eq!(message, dec_message);
 
-    // Assert decryption using an incorrect key
+    // Assert decryption using the shared key
+    let dec_message =
+        decrypt(&DecryptionOrigin::FromSharedKey(shared_key), &(c1, c2));
+    assert_eq!(message, dec_message);
+
+    // Assert decryption using an incorrect secret key
     let wrong_sk = JubJubScalar::random(&mut rng);
-    let dec_message_wrong = decrypt(&wrong_sk, &(c1, c2));
+    let dec_message_wrong =
+        decrypt(&DecryptionOrigin::FromSecretKey(wrong_sk), &(c1, c2));
     assert_ne!(message, dec_message_wrong);
 }
 
@@ -43,6 +49,7 @@ mod zk {
     use jubjub_elgamal::encrypt;
     use jubjub_elgamal::zk::{
         decrypt as decrypt_gadget, encrypt as encrypt_gadget,
+        DecryptionOrigin as DecryptionOriginZK,
     };
     use rand::rngs::StdRng;
     use rand::SeedableRng;
@@ -93,7 +100,7 @@ mod zk {
             let r = composer.append_witness(self.r);
 
             // encrypt plaintext using the public key
-            let (ciphertext_1, ciphertext_2, _) =
+            let (ciphertext_1, ciphertext_2, shared_key) =
                 encrypt_gadget(composer, public_key, plaintext, r)?;
 
             // only for the 'encrypt_decrypt' test
@@ -108,15 +115,24 @@ mod zk {
                     self.expected_ciphertext_2,
                 );
 
-                // decrypt
+                // decrypt with sk
                 let dec_plaintext = decrypt_gadget(
                     composer,
-                    secret_key,
+                    &DecryptionOriginZK::FromSecretKey(secret_key),
                     ciphertext_1,
                     ciphertext_2,
                 );
 
                 // assert decoded plaintext is the same as the original
+                composer.assert_equal_point(dec_plaintext, plaintext);
+
+                // decrypt with shared key
+                let dec_plaintext = decrypt_gadget(
+                    composer,
+                    &DecryptionOriginZK::FromSharedKey(shared_key),
+                    ciphertext_1,
+                    ciphertext_2,
+                );
                 composer.assert_equal_point(dec_plaintext, plaintext);
             }
 

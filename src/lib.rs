@@ -12,6 +12,14 @@
 
 use dusk_jubjub::{JubJubExtended, JubJubScalar, GENERATOR};
 
+/// Enumeration used to decrypt ciphertexts
+pub enum DecryptionOrigin {
+    /// From a secret key
+    FromSecretKey(JubJubScalar),
+    /// From a shared key
+    FromSharedKey(JubJubExtended),
+}
+
 /// Uses the given `public_key` and a fresh random number `r` to encrypt a
 /// plaintext [`JubJubExtended`].
 ///
@@ -31,21 +39,28 @@ pub fn encrypt(
     (ciphertext_1, ciphertext_2, shared_key)
 }
 
-/// Uses the given `secret_key` to decrypt the given `ciphertext` to the
+/// Uses the given `key` to decrypt the given `ciphertext` to the
 /// original plaintext.
 ///
 /// ## Return
 /// Returns the [`JubJubExtended`] plaintext.
 #[must_use]
 pub fn decrypt(
-    secret_key: &JubJubScalar,
+    key: &DecryptionOrigin,
     ciphertext: &(JubJubExtended, JubJubExtended),
 ) -> JubJubExtended {
     let ciphertext_1 = ciphertext.0;
     let ciphertext_2 = ciphertext.1;
 
     // return the plaintext
-    ciphertext_2 - ciphertext_1 * secret_key
+    match key {
+        DecryptionOrigin::FromSecretKey(secret_key) => {
+            ciphertext_2 - ciphertext_1 * secret_key
+        }
+        DecryptionOrigin::FromSharedKey(shared_key) => {
+            ciphertext_2 - shared_key
+        }
+    }
 }
 
 /// This module implements the equivalent plonk-gadgets for encrypting and
@@ -54,6 +69,14 @@ pub fn decrypt(
 pub mod zk {
     use dusk_jubjub::GENERATOR;
     use dusk_plonk::prelude::*;
+
+    /// Enumeration used to decrypt ciphertexts in-circuit
+    pub enum DecryptionOrigin {
+        /// From a secret key
+        FromSecretKey(Witness),
+        /// From a shared key
+        FromSharedKey(WitnessPoint),
+    }
 
     /// Uses the given `public_key` and a fresh random number `r` to encrypt a
     /// plaintext [`JubJubExtended`] in a gadget that can be used in a
@@ -84,7 +107,7 @@ pub mod zk {
         Ok((ciphertext_1, ciphertext_2, shared_key))
     }
 
-    /// Uses the given `secret_key` to decrypt the given `ciphertext` to the
+    /// Uses the given `key` to decrypt the given `ciphertext` to the
     /// original plaintext in a gadget that can be used in a plonk-circuit.
     ///
     /// ## Return
@@ -92,13 +115,21 @@ pub mod zk {
     #[must_use]
     pub fn decrypt(
         composer: &mut Composer,
-        secret_key: Witness,
+        key: &DecryptionOrigin,
         ciphertext_1: WitnessPoint,
         ciphertext_2: WitnessPoint,
     ) -> WitnessPoint {
-        let c1_sk = composer.component_mul_point(secret_key, ciphertext_1);
-
-        // return plaintext
-        composer.component_sub_point(ciphertext_2, c1_sk)
+        match key {
+            DecryptionOrigin::FromSecretKey(secret_key) => {
+                let c1_sk =
+                    composer.component_mul_point(*secret_key, ciphertext_1);
+                // return plaintext
+                composer.component_sub_point(ciphertext_2, c1_sk)
+            }
+            DecryptionOrigin::FromSharedKey(shared_key) => {
+                // return plaintext
+                composer.component_sub_point(ciphertext_2, *shared_key)
+            }
+        }
     }
 }
