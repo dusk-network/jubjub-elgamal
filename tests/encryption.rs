@@ -51,7 +51,7 @@ mod zk {
     const CAPACITY: usize = 13; // capacity required for the setup
 
     #[derive(Default, Debug)]
-    pub struct ElGamalCircuit {
+    pub struct ElGamalCircuit<const MUST_PASS: bool> {
         public_key: JubJubAffine,
         secret_key: JubJubScalar,
         plaintext: JubJubAffine,
@@ -60,7 +60,7 @@ mod zk {
         expected_ciphertext_2: JubJubAffine,
     }
 
-    impl ElGamalCircuit {
+    impl<const MUST_PASS: bool> ElGamalCircuit<MUST_PASS> {
         pub fn new(
             public_key: &JubJubExtended,
             secret_key: &JubJubScalar,
@@ -84,7 +84,7 @@ mod zk {
         }
     }
 
-    impl Circuit for ElGamalCircuit {
+    impl<const MUST_PASS: bool> Circuit for ElGamalCircuit<MUST_PASS> {
         fn circuit(&self, composer: &mut Composer) -> Result<(), Error> {
             // import inputs
             let public_key = composer.append_point(self.public_key);
@@ -92,30 +92,33 @@ mod zk {
             let plaintext = composer.append_point(self.plaintext);
             let r = composer.append_witness(self.r);
 
-            // encrypt plaintest using the public-key
+            // encrypt plaintext using the public key
             let (ciphertext_1, ciphertext_2) =
                 encrypt_gadget(composer, public_key, plaintext, r)?;
 
-            // assert that the ciphertext is as expected
-            composer.assert_equal_public_point(
-                ciphertext_1,
-                self.expected_ciphertext_1,
-            );
-            composer.assert_equal_public_point(
-                ciphertext_2,
-                self.expected_ciphertext_2,
-            );
+            // only for the 'encrypt_decrypt' test
+            if MUST_PASS {
+                // assert that the ciphertext is as expected
+                composer.assert_equal_public_point(
+                    ciphertext_1,
+                    self.expected_ciphertext_1,
+                );
+                composer.assert_equal_public_point(
+                    ciphertext_2,
+                    self.expected_ciphertext_2,
+                );
 
-            // decrypt
-            let dec_plaintext = decrypt_gadget(
-                composer,
-                secret_key,
-                ciphertext_1,
-                ciphertext_2,
-            );
+                // decrypt
+                let dec_plaintext = decrypt_gadget(
+                    composer,
+                    secret_key,
+                    ciphertext_1,
+                    ciphertext_2,
+                );
 
-            // assert decoded plaintext is the same as the original
-            composer.assert_equal_point(dec_plaintext, plaintext);
+                // assert decoded plaintext is the same as the original
+                composer.assert_equal_point(dec_plaintext, plaintext);
+            }
 
             Ok(())
         }
@@ -135,13 +138,13 @@ mod zk {
         let pp = PublicParameters::setup(1 << CAPACITY, &mut rng).unwrap();
 
         let (prover, verifier) =
-            Compiler::compile::<ElGamalCircuit>(&pp, LABEL)
+            Compiler::compile::<ElGamalCircuit<true>>(&pp, LABEL)
                 .expect("failed to compile circuit");
 
         let (proof, public_inputs) = prover
             .prove(
                 &mut rng,
-                &ElGamalCircuit::new(
+                &ElGamalCircuit::<true>::new(
                     &pk,
                     &sk,
                     &message,
@@ -155,5 +158,48 @@ mod zk {
         verifier
             .verify(&proof, &public_inputs)
             .expect("failed to verify proof");
+    }
+
+    #[test]
+    #[should_panic]
+    fn bad_encryption() {
+        let mut rng = StdRng::seed_from_u64(0xc0b);
+
+        let sk = JubJubScalar::random(&mut rng);
+        let pk = GENERATOR_EXTENDED * sk;
+
+        // we set a message being a point not on the curve
+        let message =
+            JubJubExtended::from_affine(JubJubAffine::from_raw_unchecked(
+                BlsScalar::from(42),
+                BlsScalar::from(42),
+            ));
+
+        let r = JubJubScalar::random(&mut rng);
+
+        // don't involved in this test
+        let c1 = message;
+        let c2 = message;
+
+        let pp = PublicParameters::setup(1 << CAPACITY, &mut rng).unwrap();
+
+        let (prover, _verifier) =
+            Compiler::compile::<ElGamalCircuit<false>>(&pp, LABEL)
+                .expect("failed to compile circuit");
+
+        // this should fail
+        let (_proof, _public_inputs) = prover
+            .prove(
+                &mut rng,
+                &ElGamalCircuit::<false>::new(
+                    &pk,
+                    &sk,
+                    &message,
+                    &r,
+                    &c1.into(),
+                    &c2.into(),
+                ),
+            )
+            .expect("failed to prove");
     }
 }

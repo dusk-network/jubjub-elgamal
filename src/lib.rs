@@ -62,6 +62,8 @@ pub mod zk {
     ///
     /// # Errors
     /// This function will error if `r` is not a valid jubjub-scalar.
+    /// It will also make Plonk fail to prove if the ciphertext cannot
+    /// be decrypted.
     pub fn encrypt(
         composer: &mut Composer,
         public_key: WitnessPoint,
@@ -71,6 +73,10 @@ pub mod zk {
         let r_point = composer.component_mul_point(r, public_key);
         let ciphertext_1 = composer.component_mul_generator(r, GENERATOR)?;
         let ciphertext_2 = composer.component_add_point(plaintext, r_point);
+
+        // we check if the original message can be recovered
+        let dec = composer.component_sub_point(ciphertext_2, r_point);
+        composer.assert_equal_point(dec, plaintext);
 
         Ok((ciphertext_1, ciphertext_2))
     }
