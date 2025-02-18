@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add encryption methods for u64 values [#9]
+
 ### Changed
 
 - Change methods to return shared_key and allow decryption from it [#7]
@@ -28,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add initial implementation [#1]
 
 <!-- ISSUES -->
+[#9]: https://github.com/dusk-network/jubjub-elgamal/issues/9
 [#11]: https://github.com/dusk-network/jubjub-elgamal/issues/11
 [#8]: https://github.com/dusk-network/jubjub-elgamal/issues/8
 [#7]: https://github.com/dusk-network/jubjub-elgamal/issues/7

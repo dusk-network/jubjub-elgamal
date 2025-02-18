@@ -10,6 +10,7 @@ exclude = [".github/workflows/dusk-ci.yml", ".gitignore"]
 [dependencies]
 dusk-jubjub = { version = "0.15", default-features = false, features = ["zeroize"] }
 dusk-plonk = { version = "0.21", default-features = false, features = ["alloc"], optional = true }
+dusk-bytes = "0.1"
 
 [dev-dependencies]
 ff = { version = "0.13", default-features = false }
