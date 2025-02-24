@@ -4,7 +4,7 @@
 //
 // Copyright (c) DUSK NETWORK. All rights reserved.
 
-use dusk_jubjub::{JubJubScalar, GENERATOR, GENERATOR_EXTENDED};
+use dusk_jubjub::{JubJubScalar, GENERATOR_EXTENDED};
 use ff::Field;
 use jubjub_elgamal::{decrypt_u64, encrypt_u64, DecryptionOrigin};
 use rand::rngs::StdRng;
@@ -21,7 +21,8 @@ fn encrypt_decrypt_u64() {
 
     // Encrypt using a fresh random value 'blinder'
     let blinder = JubJubScalar::random(&mut rng);
-    let (c1, c2, shared_key) = encrypt_u64(&pk, &message, &GENERATOR, &blinder);
+    let (c1, c2, shared_key) =
+        encrypt_u64(&pk, &message, &GENERATOR_EXTENDED, &blinder);
 
     // Assert decryption using the secret key
     let dec_message =
@@ -43,8 +44,7 @@ fn encrypt_decrypt_u64() {
 #[cfg(feature = "zk")]
 mod zk {
     use dusk_jubjub::{
-        JubJubAffine, JubJubExtended, JubJubScalar, GENERATOR,
-        GENERATOR_EXTENDED,
+        JubJubAffine, JubJubExtended, JubJubScalar, GENERATOR_EXTENDED,
     };
     use dusk_plonk::prelude::*;
     use ff::Field;
@@ -169,7 +169,7 @@ mod zk {
 
         let message = 1234u64;
         let r = JubJubScalar::random(&mut rng);
-        let (c1, c2, _) = encrypt_u64(&pk, &message, &GENERATOR, &r);
+        let (c1, c2, _) = encrypt_u64(&pk, &message, &GENERATOR_EXTENDED, &r);
 
         let pp = PublicParameters::setup(1 << CAPACITY, &mut rng).unwrap();
 

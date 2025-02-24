@@ -10,7 +10,7 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(clippy::pedantic)]
 
-use dusk_jubjub::{JubJubAffine, JubJubExtended, JubJubScalar};
+use dusk_jubjub::{JubJubExtended, JubJubScalar};
 
 /// Enumeration used to decrypt ciphertexts
 pub enum DecryptionOrigin {
@@ -30,7 +30,7 @@ pub enum DecryptionOrigin {
 pub fn encrypt(
     public_key: &JubJubExtended,
     plaintext: &JubJubExtended,
-    generator: &JubJubAffine,
+    generator: &JubJubExtended,
     r: &JubJubScalar,
 ) -> (JubJubExtended, JubJubExtended, JubJubExtended) {
     let ciphertext_1 = generator * r;
@@ -50,7 +50,7 @@ pub fn encrypt(
 pub fn encrypt_u64(
     public_key: &JubJubExtended,
     plaintext: &u64,
-    generator: &JubJubAffine,
+    generator: &JubJubExtended,
     r: &JubJubScalar,
 ) -> (JubJubExtended, JubJubExtended, JubJubExtended) {
     let mapped_plaintext = JubJubExtended::map_to_point(plaintext);
