@@ -22,7 +22,7 @@ fn encrypt_decrypt_u64() {
     // Encrypt using a fresh random value 'blinder'
     let blinder = JubJubScalar::random(&mut rng);
     let (ciphertext, shared_key) =
-        Encryption::encrypt_u64(&pk, &message, &GENERATOR_EXTENDED, &blinder);
+        Encryption::encrypt_u64(&pk, &message, None, &blinder);
 
     // Assert decryption using the secret key
     let dec_message = ciphertext.decrypt_u64(&DecryptFrom::SecretKey(sk));
@@ -149,8 +149,7 @@ mod zk {
 
         let message = 1234u64;
         let r = JubJubScalar::random(&mut rng);
-        let (ciphertext, _) =
-            Encryption::encrypt_u64(&pk, &message, &GENERATOR_EXTENDED, &r);
+        let (ciphertext, _) = Encryption::encrypt_u64(&pk, &message, None, &r);
 
         let pp = PublicParameters::setup(1 << CAPACITY, &mut rng).unwrap();
 

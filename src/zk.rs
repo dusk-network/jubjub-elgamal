@@ -51,7 +51,7 @@ impl Encryption {
     ) -> Result<(Self, WitnessPoint), Error> {
         let ciphertext_1 = match generator {
             Some(generator) => composer.component_mul_point(r, generator),
-            None => composer.component_mul_generator(r, GENERATOR)?,
+            _ => composer.component_mul_generator(r, GENERATOR)?,
         };
 
         let shared_key = composer.component_mul_point(r, public_key);

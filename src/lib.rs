@@ -11,7 +11,9 @@
 #![deny(clippy::pedantic)]
 
 use dusk_bytes::{DeserializableSlice, Error as DuskBytesError, Serializable};
-use dusk_jubjub::{JubJubAffine, JubJubExtended, JubJubScalar};
+use dusk_jubjub::{
+    JubJubAffine, JubJubExtended, JubJubScalar, GENERATOR_EXTENDED,
+};
 
 #[cfg(feature = "zk")]
 use dusk_plonk::prelude::Composer;
@@ -56,7 +58,8 @@ impl Encryption {
     }
 
     /// Uses the given `public_key` and a fresh random number `r` to encrypt a
-    /// plaintext [`JubJubExtended`].
+    /// plaintext [`JubJubExtended`]. An optional custom generator can be
+    /// provided.
     ///
     /// ## Return
     /// Returns an [`Encryption`] plus the computed shared key.
@@ -64,10 +67,14 @@ impl Encryption {
     pub fn encrypt(
         public_key: &JubJubExtended,
         plaintext: &JubJubExtended,
-        generator: &JubJubExtended,
+        generator: Option<&JubJubExtended>,
         r: &JubJubScalar,
     ) -> (Self, JubJubExtended) {
-        let ciphertext_1 = generator * r;
+        let ciphertext_1 = match generator {
+            Some(generator) => generator * r,
+            _ => GENERATOR_EXTENDED * r,
+        };
+
         let shared_key = public_key * r;
         let ciphertext_2 = plaintext + shared_key;
 
@@ -89,7 +96,7 @@ impl Encryption {
     pub fn encrypt_u64(
         public_key: &JubJubExtended,
         plaintext: &u64,
-        generator: &JubJubExtended,
+        generator: Option<&JubJubExtended>,
         r: &JubJubScalar,
     ) -> (Encryption, JubJubExtended) {
         let mapped_plaintext = JubJubExtended::map_to_point(plaintext);

@@ -22,7 +22,7 @@ fn encrypt_decrypt() {
     // Encrypt using a fresh random value 'blinder'
     let blinder = JubJubScalar::random(&mut rng);
     let (ciphertext, shared_key) =
-        Encryption::encrypt(&pk, &message, &GENERATOR_EXTENDED, &blinder);
+        Encryption::encrypt(&pk, &message, None, &blinder);
 
     // Assert decryption using the secret key
     let dec_message = ciphertext.decrypt(&DecryptFrom::SecretKey(sk));
@@ -37,6 +37,16 @@ fn encrypt_decrypt() {
     let dec_message_wrong =
         ciphertext.decrypt(&DecryptFrom::SecretKey(wrong_sk));
     assert_ne!(message, dec_message_wrong);
+
+    // encrypt / decrypt plaintext using custom generator
+    let custom_gen = GENERATOR_EXTENDED * JubJubScalar::random(&mut rng);
+    let custom_pk = custom_gen * sk;
+
+    let (custom_enc, _) =
+        Encryption::encrypt(&custom_pk, &message, Some(&custom_gen), &blinder);
+
+    let dec_message = custom_enc.decrypt(&DecryptFrom::SecretKey(sk));
+    assert_eq!(message, dec_message);
 }
 
 #[cfg(feature = "zk")]
@@ -152,8 +162,7 @@ mod zk {
 
         let message = GENERATOR_EXTENDED * JubJubScalar::from(1234u64);
         let r = JubJubScalar::random(&mut rng);
-        let (ciphertext, _) =
-            Encryption::encrypt(&pk, &message, &GENERATOR_EXTENDED, &r);
+        let (ciphertext, _) = Encryption::encrypt(&pk, &message, None, &r);
 
         let pp = PublicParameters::setup(1 << CAPACITY, &mut rng).unwrap();
 

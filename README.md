@@ -74,7 +74,7 @@ let message = GENERATOR_EXTENDED * JubJubScalar::from(1234u64);
 
 // Encrypt using a fresh random value 'blinder'
 let r = JubJubScalar::random(&mut rng);
-let (ciphertext, _) = Encryption::encrypt(&pk, &message, &GENERATOR_EXTENDED, &r);
+let (ciphertext, _) = Encryption::encrypt(&pk, &message, None, &r);
 
 // Assert decryption
 let dec_message = ciphertext.decrypt(&DecryptFrom::SecretKey(sk));
