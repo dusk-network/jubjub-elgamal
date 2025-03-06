@@ -35,13 +35,15 @@ impl Encryption {
         }
     }
 
-    /// Returns the `ciphertext_1` point of the [`Encryption`] in a Witness form.
+    /// Returns the `ciphertext_1` point of the [`Encryption`] in a Witness
+    /// form.
     #[must_use]
     pub fn c1(&self) -> &WitnessPoint {
         &self.ciphertext_1
     }
 
-    /// Returns the `ciphertext_2` point of the [`Encryption`] in a Witness form.
+    /// Returns the `ciphertext_2` point of the [`Encryption`] in a Witness
+    /// form.
     #[must_use]
     pub fn c2(&self) -> &WitnessPoint {
         &self.ciphertext_2
