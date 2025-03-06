@@ -124,12 +124,12 @@ mod zk {
             if MUST_PASS {
                 // assert that the ciphertext is as expected
                 composer.assert_equal_public_point(
-                    *ciphertext.parse().0,
-                    self.expected_ciphertext.parse().0,
+                    *ciphertext.c1(),
+                    self.expected_ciphertext.c1(),
                 );
                 composer.assert_equal_public_point(
-                    *ciphertext.parse().1,
-                    self.expected_ciphertext.parse().1,
+                    *ciphertext.c2(),
+                    self.expected_ciphertext.c2(),
                 );
 
                 // decrypt with sk

@@ -35,10 +35,16 @@ impl Encryption {
         }
     }
 
-    /// Returns the two points of the [`Encryption`] in a Witness form.
+    /// Returns the `ciphertext_1` point of the [`Encryption`] in a Witness form.
     #[must_use]
-    pub fn parse(&self) -> (&WitnessPoint, &WitnessPoint) {
-        (&self.ciphertext_1, &self.ciphertext_2)
+    pub fn c1(&self) -> &WitnessPoint {
+        &self.ciphertext_1
+    }
+
+    /// Returns the `ciphertext_2` point of the [`Encryption`] in a Witness form.
+    #[must_use]
+    pub fn c2(&self) -> &WitnessPoint {
+        &self.ciphertext_2
     }
 
     /// Uses the given `public_key` and a fresh random number `r` to encrypt a
