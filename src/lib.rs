@@ -10,259 +10,163 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(clippy::pedantic)]
 
-use dusk_jubjub::{JubJubExtended, JubJubScalar};
+use dusk_bytes::{DeserializableSlice, Error as DuskBytesError, Serializable};
+use dusk_jubjub::{JubJubAffine, JubJubExtended, JubJubScalar};
 
-/// Enumeration used to decrypt ciphertexts
-pub enum DecryptionOrigin {
-    /// From a secret key
-    FromSecretKey(JubJubScalar),
-    /// From a shared key
-    FromSharedKey(JubJubExtended),
-}
-
-/// Uses the given `public_key` and a fresh random number `r` to encrypt a
-/// plaintext [`JubJubExtended`].
-///
-/// ## Return
-/// Returns the ciphertext plus `shared_key` tuple
-/// `(JubJubExtended, JubJubExtended, JubJubExtended)`.
-#[must_use]
-pub fn encrypt(
-    public_key: &JubJubExtended,
-    plaintext: &JubJubExtended,
-    generator: &JubJubExtended,
-    r: &JubJubScalar,
-) -> (JubJubExtended, JubJubExtended, JubJubExtended) {
-    let ciphertext_1 = generator * r;
-    let shared_key = public_key * r;
-    let ciphertext_2 = plaintext + shared_key;
-
-    (ciphertext_1, ciphertext_2, shared_key)
-}
-
-/// Uses the given `public_key` and a fresh random number `r` to encrypt a
-/// plaintext [`u64`] by means of a curve mapping.
-///
-/// ## Return
-/// Returns the ciphertext plus `shared_key` tuple
-/// `(JubJubExtended, JubJubExtended, JubJubExtended)`.
-#[must_use]
-pub fn encrypt_u64(
-    public_key: &JubJubExtended,
-    plaintext: &u64,
-    generator: &JubJubExtended,
-    r: &JubJubScalar,
-) -> (JubJubExtended, JubJubExtended, JubJubExtended) {
-    let mapped_plaintext = JubJubExtended::map_to_point(plaintext);
-    encrypt(public_key, &mapped_plaintext, generator, r)
-}
-
-/// Uses the given `key` to decrypt the given `ciphertext` to the
-/// original plaintext.
-///
-/// ## Return
-/// Returns the [`JubJubExtended`] plaintext.
-#[must_use]
-pub fn decrypt(
-    key: &DecryptionOrigin,
-    ciphertext: &(JubJubExtended, JubJubExtended),
-) -> JubJubExtended {
-    let ciphertext_1 = ciphertext.0;
-    let ciphertext_2 = ciphertext.1;
-
-    // return the plaintext
-    match key {
-        DecryptionOrigin::FromSecretKey(secret_key) => {
-            ciphertext_2 - ciphertext_1 * secret_key
-        }
-        DecryptionOrigin::FromSharedKey(shared_key) => {
-            ciphertext_2 - shared_key
-        }
-    }
-}
-
-/// Uses the given `key` to decrypt the given `ciphertext` to the
-/// original [`u64`] plaintext, by means of a curve unmapping.
-///
-/// ## Return
-/// Returns the [`u64`] plaintext.
-#[must_use]
-pub fn decrypt_u64(
-    key: &DecryptionOrigin,
-    ciphertext: &(JubJubExtended, JubJubExtended),
-) -> u64 {
-    let mapped_plaintext = decrypt(key, ciphertext);
-    JubJubExtended::unmap_from_point(mapped_plaintext)
-}
+#[cfg(feature = "zk")]
+use dusk_plonk::prelude::Composer;
 
 /// This module implements the equivalent plonk-gadgets for encrypting and
 /// decrypting. These gadgets can be used as part of a larger circuit.
 #[cfg(feature = "zk")]
-pub mod zk {
-    use core::ops::Index;
-    use dusk_bytes::Serializable;
-    use dusk_jubjub::GENERATOR;
-    use dusk_plonk::prelude::*;
+pub mod zk;
 
-    /// Enumeration used to decrypt ciphertexts in-circuit
-    pub enum DecryptionOrigin {
-        /// From a secret key
-        FromSecretKey(Witness),
-        /// From a shared key
-        FromSharedKey(WitnessPoint),
-    }
+/// Enumeration used to decrypt ciphertexts
+pub enum DecryptFrom {
+    /// From a secret key
+    SecretKey(JubJubScalar),
+    /// From a shared key
+    SharedKey(JubJubExtended),
+}
 
-    /// Uses the given `public_key` and a fresh random number `r` to encrypt a
-    /// plaintext [`WitnessPoint`] in a gadget that can be used in a
-    /// plonk-circuit.
-    ///
-    /// ## Return
-    /// Returns the ciphertext plus `shared_key` tuple
-    /// `(WitnessPoint, WitnessPoint, WitnessPoint)`.
-    ///
-    /// ## Errors
-    /// This function will error if `r` is not a valid jubjub-scalar.
-    /// It will also make Plonk fail to prove if the ciphertext cannot
-    /// be decrypted.
-    pub fn encrypt(
-        composer: &mut Composer,
-        public_key: WitnessPoint,
-        plaintext: WitnessPoint,
-        generator: Option<WitnessPoint>,
-        r: Witness,
-    ) -> Result<(WitnessPoint, WitnessPoint, WitnessPoint), Error> {
-        let ciphertext_1 = match generator {
-            Some(generator) => composer.component_mul_point(r, generator),
-            None => composer.component_mul_generator(r, GENERATOR)?,
-        };
+/// `ElGamal` encryption of a [`JubJubExtended`] plaintext
+#[derive(Default, Debug, Clone, Copy)]
+pub struct Encryption {
+    ciphertext_1: JubJubExtended,
+    ciphertext_2: JubJubExtended,
+}
 
-        let shared_key = composer.component_mul_point(r, public_key);
-        let ciphertext_2 = composer.component_add_point(plaintext, shared_key);
-
-        // we check if the original message can be recovered
-        let dec = composer.component_sub_point(ciphertext_2, shared_key);
-        composer.assert_equal_point(dec, plaintext);
-
-        Ok((ciphertext_1, ciphertext_2, shared_key))
-    }
-
-    /// Uses the given `public_key` and a fresh random number `r` to encrypt a
-    /// unsigned 64-bit plaintext [`Witness`] in a gadget that can be used in a
-    /// plonk-circuit. It does it by computing a curve mapping [`WitnessPoint`],
-    /// which the circuit enforces to match the original plaintext.
-    ///
-    /// ## Return
-    /// Returns the ciphertext plus `shared_key` tuple
-    /// `(WitnessPoint, WitnessPoint, WitnessPoint)`.
-    ///
-    /// ## Panics
-    /// Panics if fails to convert scalar to LE bytes.
-    ///
-    /// ## Errors
-    /// This function will error if `r` is not a valid jubjub-scalar.
-    /// It will also make Plonk fail to prove if the ciphertext cannot
-    /// be decrypted.
-    pub fn encrypt_u64(
-        composer: &mut Composer,
-        public_key: WitnessPoint,
-        plaintext: Witness,
-        generator: Option<WitnessPoint>,
-        r: Witness,
-    ) -> Result<(WitnessPoint, WitnessPoint, WitnessPoint), Error> {
-        // we take the u64 plaintext from the Witness
-        let plaintext_le_u64 =
-            &composer.index(plaintext).to_bytes()[..u64::SIZE];
-        let plaintext_u64 =
-            u64::from_le_bytes(plaintext_le_u64.try_into().unwrap());
-
-        // we map the plaintext to a point on the curve
-        let mapped_plaintext =
-            composer.append_point(JubJubExtended::map_to_point(&plaintext_u64));
-
-        // we take the 64-bit representation of the Witness u64 plaintext
-        // as an array of Witnesses
-        let plaintext_decom = composer.component_decomposition::<64>(plaintext);
-
-        // we do the same with the map for its bit size (255)
-        let map = mapped_plaintext.y();
-        let map_decom = composer.component_decomposition::<255>(*map);
-
-        // we enforce both decompositions to be equal up to the 64th bit
-        plaintext_decom
-            .iter()
-            .zip(map_decom)
-            .for_each(|(bit_a, bit_b)| composer.assert_equal(*bit_a, bit_b));
-
-        // we return the encryption of the mapped plaintext
-        let (ciphertext_1, ciphertext_2, shared_key) =
-            encrypt(composer, public_key, mapped_plaintext, generator, r)?;
-        Ok((ciphertext_1, ciphertext_2, shared_key))
-    }
-
-    /// Uses the given `key` to decrypt the given `ciphertext` to the
-    /// original plaintext in a gadget that can be used in a plonk-circuit.
-    ///
-    /// ## Return
-    /// Returns the [`WitnessPoint`] plaintext.
+impl Encryption {
+    /// Creates a new [`Encryption`] from two points
     #[must_use]
-    pub fn decrypt(
-        composer: &mut Composer,
-        key: &DecryptionOrigin,
-        ciphertext_1: WitnessPoint,
-        ciphertext_2: WitnessPoint,
-    ) -> WitnessPoint {
+    pub fn new(
+        ciphertext_1: JubJubExtended,
+        ciphertext_2: JubJubExtended,
+    ) -> Self {
+        Self {
+            ciphertext_1,
+            ciphertext_2,
+        }
+    }
+
+    /// Returns the two points of the [`Encryption`]
+    #[must_use]
+    pub fn parse(&self) -> (&JubJubExtended, &JubJubExtended) {
+        (&self.ciphertext_1, &self.ciphertext_2)
+    }
+
+    /// Uses the given `public_key` and a fresh random number `r` to encrypt a
+    /// plaintext [`JubJubExtended`].
+    ///
+    /// ## Return
+    /// Returns an [`Encryption`] plus the computed shared key.
+    #[must_use]
+    pub fn encrypt(
+        public_key: &JubJubExtended,
+        plaintext: &JubJubExtended,
+        generator: &JubJubExtended,
+        r: &JubJubScalar,
+    ) -> (Self, JubJubExtended) {
+        let ciphertext_1 = generator * r;
+        let shared_key = public_key * r;
+        let ciphertext_2 = plaintext + shared_key;
+
+        (
+            Self {
+                ciphertext_1,
+                ciphertext_2,
+            },
+            shared_key,
+        )
+    }
+
+    /// Uses the given `public_key` and a fresh random number `r` to encrypt a
+    /// plaintext [`u64`] by means of a curve mapping.
+    ///
+    /// ## Return
+    /// Returns an [`Encryption`] plus the computed shared key.
+    #[must_use]
+    pub fn encrypt_u64(
+        public_key: &JubJubExtended,
+        plaintext: &u64,
+        generator: &JubJubExtended,
+        r: &JubJubScalar,
+    ) -> (Encryption, JubJubExtended) {
+        let mapped_plaintext = JubJubExtended::map_to_point(plaintext);
+        Self::encrypt(public_key, &mapped_plaintext, generator, r)
+    }
+
+    /// Uses the given `key` to decrypt the [`Encryption`] to the
+    /// original plaintext.
+    ///
+    /// ## Return
+    /// Returns the [`JubJubExtended`] plaintext.
+    #[must_use]
+    pub fn decrypt(&self, key: &DecryptFrom) -> JubJubExtended {
         match key {
-            DecryptionOrigin::FromSecretKey(secret_key) => {
-                let c1_sk =
-                    composer.component_mul_point(*secret_key, ciphertext_1);
-                // return plaintext
-                composer.component_sub_point(ciphertext_2, c1_sk)
+            DecryptFrom::SecretKey(secret_key) => {
+                self.ciphertext_2 - self.ciphertext_1 * secret_key
             }
-            DecryptionOrigin::FromSharedKey(shared_key) => {
-                // return plaintext
-                composer.component_sub_point(ciphertext_2, *shared_key)
+            DecryptFrom::SharedKey(shared_key) => {
+                self.ciphertext_2 - shared_key
             }
         }
     }
 
-    /// Uses the given `key` to decrypt the given `ciphertext` to the
-    /// original [`u64`] plaintext in a gadget that can be used in a
-    /// plonk-circuit.
-    ///
-    /// ## Panics
-    /// Panics if fails to convert scalar to LE bytes.
+    /// Uses the given `key` to decrypt the [`Encryption`] to the
+    /// original [`u64`] plaintext, by means of a curve unmapping.
     ///
     /// ## Return
-    /// Returns the [`Witness`] plaintext.
+    /// Returns the [`u64`] plaintext.
     #[must_use]
-    pub fn decrypt_u64(
+    pub fn decrypt_u64(&self, key: &DecryptFrom) -> u64 {
+        let mapped_plaintext = self.decrypt(key);
+        JubJubExtended::unmap_from_point(mapped_plaintext)
+    }
+
+    /// Appends the [`Encryption`] to the provided [`Composer`]
+    #[cfg(feature = "zk")]
+    pub fn append_to_composer(
+        &self,
         composer: &mut Composer,
-        key: &DecryptionOrigin,
-        ciphertext_1: WitnessPoint,
-        ciphertext_2: WitnessPoint,
-    ) -> Witness {
-        let mapped_dec_plaintext =
-            decrypt(composer, key, ciphertext_1, ciphertext_2);
+    ) -> zk::Encryption {
+        let ciphertext_1 = composer.append_point(self.ciphertext_1);
+        let ciphertext_2 = composer.append_point(self.ciphertext_2);
 
-        // we take the u64 plaintext from the WitnessPoint (i.e. we unmap)
-        let dec_plaintext_le_u64 =
-            &composer.index(*mapped_dec_plaintext.y()).to_bytes()[..u64::SIZE];
-        let dec_plaintext_u64 =
-            u64::from_le_bytes(dec_plaintext_le_u64.try_into().unwrap());
-        let dec_plaintext = composer.append_witness(dec_plaintext_u64);
+        zk::Encryption {
+            ciphertext_1,
+            ciphertext_2,
+        }
+    }
+}
 
-        // we enforce the unmaped plaintext to match the actual
-        // decryption output up to the 64th bit
-        let map_plaintext_decom =
-            composer.component_decomposition::<255>(*mapped_dec_plaintext.y());
-        let dec_plaintext_decom =
-            composer.component_decomposition::<64>(dec_plaintext);
+impl Serializable<64> for Encryption {
+    type Error = DuskBytesError;
+    const SIZE: usize = 64;
 
-        dec_plaintext_decom
-            .iter()
-            .zip(map_plaintext_decom)
-            .for_each(|(bit_a, bit_b)| composer.assert_equal(*bit_a, bit_b));
+    fn to_bytes(&self) -> [u8; 64] {
+        let mut bytes = [0u8; 64];
 
-        dec_plaintext
+        bytes[..32]
+            .copy_from_slice(&JubJubAffine::from(self.ciphertext_1).to_bytes());
+        bytes[32..]
+            .copy_from_slice(&JubJubAffine::from(self.ciphertext_2).to_bytes());
+
+        bytes
+    }
+
+    fn from_bytes(buf: &[u8; 64]) -> Result<Self, Self::Error>
+    where
+        Self: Sized,
+    {
+        let ciphertext_1: JubJubExtended =
+            JubJubAffine::from_slice(&buf[..32])?.into();
+        let ciphertext_2: JubJubExtended =
+            JubJubAffine::from_slice(&buf[32..])?.into();
+
+        Ok(Encryption {
+            ciphertext_1,
+            ciphertext_2,
+        })
     }
 }
