@@ -26,6 +26,15 @@ pub struct Encryption {
 }
 
 impl Encryption {
+    /// Creates a new [`Encryption`] from two Witness points
+    #[must_use]
+    pub fn new(ciphertext_1: WitnessPoint, ciphertext_2: WitnessPoint) -> Self {
+        Self {
+            ciphertext_1,
+            ciphertext_2,
+        }
+    }
+
     /// Returns the two points of the [`Encryption`] in a Witness form.
     #[must_use]
     pub fn parse(&self) -> (&WitnessPoint, &WitnessPoint) {

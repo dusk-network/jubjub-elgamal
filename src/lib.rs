@@ -15,9 +15,6 @@ use dusk_jubjub::{
     JubJubAffine, JubJubExtended, JubJubScalar, GENERATOR_EXTENDED,
 };
 
-#[cfg(feature = "zk")]
-use dusk_plonk::prelude::Composer;
-
 /// This module implements the equivalent plonk-gadgets for encrypting and
 /// decrypting. These gadgets can be used as part of a larger circuit.
 #[cfg(feature = "zk")]
@@ -129,21 +126,6 @@ impl Encryption {
     pub fn decrypt_u64(&self, key: &DecryptFrom) -> u64 {
         let mapped_plaintext = self.decrypt(key);
         JubJubExtended::unmap_from_point(mapped_plaintext)
-    }
-
-    /// Appends the [`Encryption`] to the provided [`Composer`]
-    #[cfg(feature = "zk")]
-    pub fn append_to_composer(
-        &self,
-        composer: &mut Composer,
-    ) -> zk::Encryption {
-        let ciphertext_1 = composer.append_point(self.ciphertext_1);
-        let ciphertext_2 = composer.append_point(self.ciphertext_2);
-
-        zk::Encryption {
-            ciphertext_1,
-            ciphertext_2,
-        }
     }
 }
 

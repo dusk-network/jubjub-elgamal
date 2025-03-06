@@ -4,6 +4,7 @@
 //
 // Copyright (c) DUSK NETWORK. All rights reserved.
 
+use dusk_bytes::Serializable;
 use dusk_jubjub::{JubJubScalar, GENERATOR_EXTENDED};
 use ff::Field;
 use jubjub_elgamal::{DecryptFrom, Encryption};
@@ -47,6 +48,19 @@ fn encrypt_decrypt() {
 
     let dec_message = custom_enc.decrypt(&DecryptFrom::SecretKey(sk));
     assert_eq!(message, dec_message);
+}
+
+#[test]
+fn test_bytes() {
+    let mut rng = StdRng::seed_from_u64(0xc0b);
+    let point = GENERATOR_EXTENDED * &JubJubScalar::random(&mut rng);
+
+    let ciphertext = Encryption::new(point, point);
+
+    assert_eq!(
+        ciphertext,
+        Encryption::from_bytes(&ciphertext.to_bytes()).unwrap()
+    );
 }
 
 #[cfg(feature = "zk")]
