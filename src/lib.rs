@@ -32,7 +32,7 @@ pub enum DecryptFrom {
 }
 
 /// `ElGamal` encryption of a [`JubJubExtended`] plaintext
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Encryption {
     ciphertext_1: JubJubExtended,
     ciphertext_2: JubJubExtended,
