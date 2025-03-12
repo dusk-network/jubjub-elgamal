@@ -14,6 +14,9 @@ use dusk_jubjub::{
     JubJubAffine, JubJubExtended, JubJubScalar, GENERATOR_EXTENDED,
 };
 
+#[cfg(feature = "rkyv-impl")]
+use rkyv::{Archive, Deserialize, Serialize};
+
 /// This module implements the equivalent plonk-gadgets for encrypting and
 /// decrypting. These gadgets can be used as part of a larger circuit.
 #[cfg(feature = "zk")]
@@ -29,6 +32,11 @@ pub enum DecryptFrom {
 
 /// `ElGamal` encryption of a [`JubJubExtended`] plaintext
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "rkyv-impl",
+    derive(Archive, Deserialize, Serialize),
+    archive_attr(derive(bytecheck::CheckBytes))
+)]
 pub struct Encryption {
     ciphertext_1: JubJubExtended,
     ciphertext_2: JubJubExtended,

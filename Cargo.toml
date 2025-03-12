@@ -10,6 +10,8 @@ exclude = [".github/workflows/dusk-ci.yml", ".gitignore"]
 [dependencies]
 dusk-jubjub = { version = "0.15", default-features = false, features = ["zeroize"] }
 dusk-plonk = { version = "0.21", default-features = false, features = ["alloc"], optional = true }
+rkyv = { version = "0.7", optional = true, default-features = false }
+bytecheck = { version = "0.6", optional = true, default-features = false }
 dusk-bytes = "0.1"
 
 [dev-dependencies]
@@ -18,3 +20,8 @@ rand = { version = "0.8", default-features = false, features = ["std_rng"] }
 
 [features]
 zk = ["dusk-plonk"]
+rkyv-impl = [
+    "dusk-jubjub/rkyv-impl",
+    "rkyv",
+    "bytecheck",
+]
