@@ -1,6 +1,6 @@
 [package]
 name = "jubjub-elgamal"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 repository = "https://github.com/dusk-network/jubjub-elgamal"
 description = "ElGamal encryption scheme implemented on the JubJub curve with support for zero-knowledge circuits"
