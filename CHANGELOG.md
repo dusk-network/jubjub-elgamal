@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `Encryption` structs
+
+### Changed
+
+- Change `encrypt` method to allow optional generator
+
 ## [0.3.0] - 2025-02-25
 
 ### Added

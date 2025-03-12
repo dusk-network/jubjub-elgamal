@@ -6,7 +6,7 @@
 
 use dusk_jubjub::{JubJubScalar, GENERATOR_EXTENDED};
 use ff::Field;
-use jubjub_elgamal::{decrypt_u64, encrypt_u64, DecryptionOrigin};
+use jubjub_elgamal::{DecryptFrom, Encryption};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
@@ -21,23 +21,22 @@ fn encrypt_decrypt_u64() {
 
     // Encrypt using a fresh random value 'blinder'
     let blinder = JubJubScalar::random(&mut rng);
-    let (c1, c2, shared_key) =
-        encrypt_u64(&pk, &message, &GENERATOR_EXTENDED, &blinder);
+    let (ciphertext, shared_key) =
+        Encryption::encrypt_u64(&pk, &message, None, &blinder);
 
     // Assert decryption using the secret key
-    let dec_message =
-        decrypt_u64(&DecryptionOrigin::FromSecretKey(sk), &(c1, c2));
+    let dec_message = ciphertext.decrypt_u64(&DecryptFrom::SecretKey(sk));
     assert_eq!(message, dec_message);
 
     // Assert decryption using the shared key
     let dec_message =
-        decrypt_u64(&DecryptionOrigin::FromSharedKey(shared_key), &(c1, c2));
+        ciphertext.decrypt_u64(&DecryptFrom::SharedKey(shared_key));
     assert_eq!(message, dec_message);
 
     // Assert decryption using an incorrect secret key
     let wrong_sk = JubJubScalar::random(&mut rng);
     let dec_message_wrong =
-        decrypt_u64(&DecryptionOrigin::FromSecretKey(wrong_sk), &(c1, c2));
+        ciphertext.decrypt_u64(&DecryptFrom::SecretKey(wrong_sk));
     assert_ne!(message, dec_message_wrong);
 }
 
@@ -48,11 +47,10 @@ mod zk {
     };
     use dusk_plonk::prelude::*;
     use ff::Field;
-    use jubjub_elgamal::encrypt_u64;
     use jubjub_elgamal::zk::{
-        decrypt_u64 as decrypt_u64_gadget, encrypt_u64 as encrypt_u64_gadget,
-        DecryptionOrigin as DecryptionOriginZK,
+        DecryptFrom as DecryptFromZK, Encryption as EncryptionZK,
     };
+    use jubjub_elgamal::Encryption;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
 
@@ -65,8 +63,7 @@ mod zk {
         secret_key: JubJubScalar,
         plaintext: u64,
         r: JubJubScalar,
-        expected_ciphertext_1: JubJubAffine,
-        expected_ciphertext_2: JubJubAffine,
+        expected_ciphertext: Encryption,
     }
 
     impl ElGamalCircuit {
@@ -75,20 +72,14 @@ mod zk {
             secret_key: &JubJubScalar,
             plaintext: &u64,
             r: &JubJubScalar,
-            expected_ciphertext_1: &JubJubExtended,
-            expected_ciphertext_2: &JubJubExtended,
+            expected_ciphertext: &Encryption,
         ) -> Self {
             Self {
                 public_key: JubJubAffine::from(public_key),
                 secret_key: *secret_key,
                 plaintext: *plaintext,
                 r: *r,
-                expected_ciphertext_1: JubJubAffine::from(
-                    expected_ciphertext_1,
-                ),
-                expected_ciphertext_2: JubJubAffine::from(
-                    expected_ciphertext_2,
-                ),
+                expected_ciphertext: *expected_ciphertext,
             }
         }
     }
@@ -102,37 +93,30 @@ mod zk {
             let r = composer.append_witness(self.r);
 
             // encrypt plaintext using the public key
-            let (ciphertext_1, ciphertext_2, shared_key) =
-                encrypt_u64_gadget(composer, public_key, plaintext, None, r)?;
+            let (ciphertext, shared_key) = EncryptionZK::encrypt_u64(
+                composer, public_key, plaintext, None, r,
+            )?;
 
             // assert that the ciphertext is as expected
             composer.assert_equal_public_point(
-                ciphertext_1,
-                self.expected_ciphertext_1,
+                *ciphertext.c1(),
+                self.expected_ciphertext.c1(),
             );
             composer.assert_equal_public_point(
-                ciphertext_2,
-                self.expected_ciphertext_2,
+                *ciphertext.c2(),
+                self.expected_ciphertext.c2(),
             );
 
             // decrypt with sk
-            let dec_plaintext = decrypt_u64_gadget(
-                composer,
-                &DecryptionOriginZK::FromSecretKey(secret_key),
-                ciphertext_1,
-                ciphertext_2,
-            );
+            let dec_plaintext = ciphertext
+                .decrypt_u64(composer, &DecryptFromZK::SecretKey(secret_key));
 
             // assert decoded plaintext is the same as the original
             composer.assert_equal(dec_plaintext, plaintext);
 
             // decrypt with shared key
-            let dec_plaintext = decrypt_u64_gadget(
-                composer,
-                &DecryptionOriginZK::FromSharedKey(shared_key),
-                ciphertext_1,
-                ciphertext_2,
-            );
+            let dec_plaintext = ciphertext
+                .decrypt_u64(composer, &DecryptFromZK::SharedKey(shared_key));
             composer.assert_equal(dec_plaintext, plaintext);
 
             // encrypt / decrypt plaintext using custom generator
@@ -140,7 +124,7 @@ mod zk {
                 .append_point(GENERATOR_EXTENDED * JubJubScalar::from(1234u64));
             let custom_pk =
                 composer.component_mul_point(secret_key, custom_gen);
-            let (custom_c1, custom_c2, _) = encrypt_u64_gadget(
+            let (custom_enc, _) = EncryptionZK::encrypt_u64(
                 composer,
                 custom_pk,
                 plaintext,
@@ -148,12 +132,8 @@ mod zk {
                 r,
             )?;
 
-            let custom_dec_plaintext = decrypt_u64_gadget(
-                composer,
-                &DecryptionOriginZK::FromSecretKey(secret_key),
-                custom_c1,
-                custom_c2,
-            );
+            let custom_dec_plaintext = custom_enc
+                .decrypt_u64(composer, &DecryptFromZK::SecretKey(secret_key));
             composer.assert_equal(custom_dec_plaintext, plaintext);
 
             Ok(())
@@ -169,7 +149,7 @@ mod zk {
 
         let message = 1234u64;
         let r = JubJubScalar::random(&mut rng);
-        let (c1, c2, _) = encrypt_u64(&pk, &message, &GENERATOR_EXTENDED, &r);
+        let (ciphertext, _) = Encryption::encrypt_u64(&pk, &message, None, &r);
 
         let pp = PublicParameters::setup(1 << CAPACITY, &mut rng).unwrap();
 
@@ -180,14 +160,7 @@ mod zk {
         let (proof, public_inputs) = prover
             .prove(
                 &mut rng,
-                &ElGamalCircuit::new(
-                    &pk,
-                    &sk,
-                    &message,
-                    &r,
-                    &c1.into(),
-                    &c2.into(),
-                ),
+                &ElGamalCircuit::new(&pk, &sk, &message, &r, &ciphertext),
             )
             .expect("failed to prove");
 

@@ -61,7 +61,7 @@ A basic example demonstrating how to encrypt and decrypt a message using ElGamal
 ```rust
 use dusk_jubjub::{JubJubScalar, GENERATOR_EXTENDED};
 use ff::Field;
-use jubjub_elgamal::{decrypt, encrypt, DecryptionOrigin};
+use jubjub_elgamal::{Encryption, DecryptFrom};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
@@ -74,10 +74,10 @@ let message = GENERATOR_EXTENDED * JubJubScalar::from(1234u64);
 
 // Encrypt using a fresh random value 'blinder'
 let r = JubJubScalar::random(&mut rng);
-let (c1, c2, _) = encrypt(&pk, &message, &GENERATOR_EXTENDED, &r);
+let (ciphertext, _) = Encryption::encrypt(&pk, &message, None, &r);
 
 // Assert decryption
-let dec_message = decrypt(&DecryptionOrigin::FromSecretKey(sk), &(c1, c2));
+let dec_message = ciphertext.decrypt(&DecryptFrom::SecretKey(sk));
 assert_eq!(message, dec_message);
 ```
 
