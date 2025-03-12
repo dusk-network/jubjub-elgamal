@@ -9,6 +9,9 @@ use dusk_bytes::Serializable;
 use dusk_jubjub::GENERATOR;
 use dusk_plonk::prelude::*;
 
+#[cfg(feature = "rkyv-impl")]
+use rkyv::{Archive, Deserialize, Serialize};
+
 /// Enumeration used to decrypt ciphertexts in-circuit
 pub enum DecryptFrom {
     /// From a secret key
