@@ -9,9 +9,6 @@ use dusk_bytes::Serializable;
 use dusk_jubjub::GENERATOR;
 use dusk_plonk::prelude::*;
 
-#[cfg(feature = "rkyv-impl")]
-use rkyv::{Archive, Deserialize, Serialize};
-
 /// Enumeration used to decrypt ciphertexts in-circuit
 pub enum DecryptFrom {
     /// From a secret key
@@ -23,11 +20,6 @@ pub enum DecryptFrom {
 /// `ElGamal` encryption of a [`JubJubExtended`] plaintext
 /// in a Witness form, meant to be used in-circuit
 #[derive(Debug)]
-#[cfg_attr(
-    feature = "rkyv-impl",
-    derive(Archive, Deserialize, Serialize),
-    archive_attr(derive(bytecheck::CheckBytes))
-)]
 pub struct Encryption {
     pub(crate) ciphertext_1: WitnessPoint,
     pub(crate) ciphertext_2: WitnessPoint,
