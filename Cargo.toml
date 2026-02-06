@@ -1,15 +1,21 @@
 [package]
 name = "jubjub-elgamal"
 version = "0.4.3"
-edition = "2021"
 repository = "https://github.com/dusk-network/jubjub-elgamal"
 description = "ElGamal encryption scheme implemented on the JubJub curve with support for zero-knowledge circuits"
-license = "MPL-2.0"
 exclude = [".github/workflows/dusk-ci.yml", ".gitignore"]
 
+edition = "2021"
+license = "MPL-2.0"
+rust-version = "1.85"
+
 [dependencies]
-dusk-jubjub = { version = "0.15", default-features = false, features = ["zeroize"] }
-dusk-plonk = { version = "0.21", default-features = false, features = ["alloc"], optional = true }
+dusk-jubjub = { version = "0.15", default-features = false, features = [
+  "zeroize",
+] }
+dusk-plonk = { version = "0.22.0-rc.0", default-features = false, features = [
+  "alloc",
+], optional = true }
 rkyv = { version = "0.7", optional = true, default-features = false }
 bytecheck = { version = "0.6", optional = true, default-features = false }
 dusk-bytes = "0.1"
@@ -20,8 +26,4 @@ rand = { version = "0.8", default-features = false, features = ["std_rng"] }
 
 [features]
 zk = ["dusk-plonk"]
-rkyv-impl = [
-    "dusk-jubjub/rkyv-impl",
-    "rkyv",
-    "bytecheck",
-]
+rkyv-impl = ["dusk-jubjub/rkyv-impl", "rkyv", "bytecheck"]

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Move to stable MSRV 1.85
+- Update `dusk-plonk` to v0.22.0-rc.0
+- Update `dusk-jubjub` to v0.15
+
 ## [0.4.3] - 2025-03-12
 
 ### Added
@@ -59,8 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- VERSIONS -->
 [Unreleased]: https://github.com/dusk-network/jubjub-elgamal/compare/v0.4.3...HEAD
-[0.4.3]: https://github.com/dusk-network/jubjub-elgamal/releases/tag/v0.4.3
-[0.4.0]: https://github.com/dusk-network/jubjub-elgamal/releases/tag/v0.4.0
-[0.3.0]: https://github.com/dusk-network/jubjub-elgamal/releases/tag/v0.3.0
-[0.2.0]: https://github.com/dusk-network/jubjub-elgamal/releases/tag/v0.2.0
+[0.4.3]: https://github.com/dusk-network/jubjub-elgamal/compare/v0.4.0...v0.4.2
+[0.4.0]: https://github.com/dusk-network/jubjub-elgamal/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/dusk-network/jubjub-elgamal/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/dusk-network/jubjub-elgamal/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/dusk-network/jubjub-elgamal/releases/tag/v0.1.0
