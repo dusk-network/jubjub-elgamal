@@ -11,7 +11,7 @@
 
 use dusk_bytes::{DeserializableSlice, Error as DuskBytesError, Serializable};
 use dusk_jubjub::{
-    JubJubAffine, JubJubExtended, JubJubScalar, GENERATOR_EXTENDED,
+    GENERATOR_EXTENDED, JubJubAffine, JubJubExtended, JubJubScalar,
 };
 
 #[cfg(feature = "rkyv-impl")]
