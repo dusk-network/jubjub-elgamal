@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Move to stable MSRV 1.85
+- Move to edition 2024
 - Update `dusk-plonk` to v0.22.0-rc.0
 - Update `dusk-jubjub` to v0.15
 

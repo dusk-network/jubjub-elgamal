@@ -4,11 +4,11 @@
 //
 // Copyright (c) DUSK NETWORK. All rights reserved.
 
-use dusk_jubjub::{JubJubScalar, GENERATOR_EXTENDED};
+use dusk_jubjub::{GENERATOR_EXTENDED, JubJubScalar};
 use ff::Field;
 use jubjub_elgamal::{DecryptFrom, Encryption};
-use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 #[test]
 fn encrypt_decrypt_u64() {
@@ -43,16 +43,16 @@ fn encrypt_decrypt_u64() {
 #[cfg(feature = "zk")]
 mod zk {
     use dusk_jubjub::{
-        JubJubAffine, JubJubExtended, JubJubScalar, GENERATOR_EXTENDED,
+        GENERATOR_EXTENDED, JubJubAffine, JubJubExtended, JubJubScalar,
     };
     use dusk_plonk::prelude::*;
     use ff::Field;
+    use jubjub_elgamal::Encryption;
     use jubjub_elgamal::zk::{
         DecryptFrom as DecryptFromZK, Encryption as EncryptionZK,
     };
-    use jubjub_elgamal::Encryption;
-    use rand::rngs::StdRng;
     use rand::SeedableRng;
+    use rand::rngs::StdRng;
 
     static LABEL: &[u8; 12] = b"dusk-network";
     const CAPACITY: usize = 14; // capacity required for the setup
