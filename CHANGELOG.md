@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add v0.2.0-compatible `encrypt` and `decrypt` free functions to zk module [#25]
+
 ### Changed
 
 - Move to stable MSRV 1.85
@@ -57,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add initial implementation [#1]
 
 <!-- ISSUES -->
+[#25]: https://github.com/dusk-network/jubjub-elgamal/issues/25
 [#9]: https://github.com/dusk-network/jubjub-elgamal/issues/9
 [#11]: https://github.com/dusk-network/jubjub-elgamal/issues/11
 [#8]: https://github.com/dusk-network/jubjub-elgamal/issues/8

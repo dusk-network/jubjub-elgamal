@@ -209,3 +209,50 @@ impl Encryption {
         dec_plaintext
     }
 }
+
+/// Uses the given `public_key` and a fresh random number `r` to encrypt a
+/// plaintext [`JubJubExtended`] in a gadget that can be used in a
+/// plonk-circuit.
+///
+/// Unlike [`Encryption::encrypt`], this does not add in-circuit constraints
+/// to verify that the ciphertext decrypts back to the plaintext. This
+/// produces fewer gates, matching the circuit description from v0.2.0.
+///
+/// # Return
+/// Returns the ciphertext tuple `(WitnessPoint, WitnessPoint)`.
+///
+/// # Errors
+/// This function will error if `r` is not a valid jubjub-scalar.
+pub fn encrypt_unchecked(
+    composer: &mut Composer,
+    public_key: WitnessPoint,
+    plaintext: WitnessPoint,
+    r: Witness,
+) -> Result<(WitnessPoint, WitnessPoint), Error> {
+    let r_point = composer.component_mul_point(r, public_key);
+    let ciphertext_1 = composer.component_mul_generator(r, GENERATOR)?;
+    let ciphertext_2 = composer.component_add_point(plaintext, r_point);
+
+    Ok((ciphertext_1, ciphertext_2))
+}
+
+/// Uses the given `secret_key` to decrypt the given `ciphertext` to the
+/// original plaintext in a gadget that can be used in a plonk-circuit.
+///
+/// This is the standalone counterpart to [`Encryption::decrypt`], matching
+/// the circuit description from v0.2.0.
+///
+/// ## Return
+/// Returns the [`WitnessPoint`] plaintext.
+#[must_use]
+pub fn decrypt_unchecked(
+    composer: &mut Composer,
+    secret_key: Witness,
+    ciphertext_1: WitnessPoint,
+    ciphertext_2: WitnessPoint,
+) -> WitnessPoint {
+    let c1_sk = composer.component_mul_point(secret_key, ciphertext_1);
+
+    // return plaintext
+    composer.component_sub_point(ciphertext_2, c1_sk)
+}
