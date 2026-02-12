@@ -223,7 +223,7 @@ impl Encryption {
 ///
 /// # Errors
 /// This function will error if `r` is not a valid jubjub-scalar.
-pub fn encrypt(
+pub fn encrypt_unchecked(
     composer: &mut Composer,
     public_key: WitnessPoint,
     plaintext: WitnessPoint,
@@ -245,7 +245,7 @@ pub fn encrypt(
 /// ## Return
 /// Returns the [`WitnessPoint`] plaintext.
 #[must_use]
-pub fn decrypt(
+pub fn decrypt_unchecked(
     composer: &mut Composer,
     secret_key: Witness,
     ciphertext_1: WitnessPoint,

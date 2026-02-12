@@ -70,11 +70,10 @@ mod zk {
     };
     use dusk_plonk::prelude::*;
     use ff::Field;
-    use jubjub_elgamal::Encryption;
     use jubjub_elgamal::zk::{
         DecryptFrom as DecryptFromZK, Encryption as EncryptionZK,
-        decrypt as decrypt_gadget, encrypt as encrypt_gadget,
     };
+    use jubjub_elgamal::{Encryption, zk};
     use rand::SeedableRng;
     use rand::rngs::StdRng;
 
@@ -204,7 +203,7 @@ mod zk {
     }
 
     #[derive(Default, Debug)]
-    pub struct ElGamalV2Circuit {
+    pub struct ElGamalInCircuitCheck {
         public_key: JubJubAffine,
         secret_key: JubJubScalar,
         plaintext: JubJubAffine,
@@ -213,7 +212,7 @@ mod zk {
         expected_ciphertext_2: JubJubAffine,
     }
 
-    impl ElGamalV2Circuit {
+    impl ElGamalInCircuitCheck {
         pub fn new(
             public_key: &JubJubExtended,
             secret_key: &JubJubScalar,
@@ -237,7 +236,7 @@ mod zk {
         }
     }
 
-    impl Circuit for ElGamalV2Circuit {
+    impl Circuit for ElGamalInCircuitCheck {
         fn circuit(&self, composer: &mut Composer) -> Result<(), Error> {
             // import inputs
             let public_key = composer.append_point(self.public_key);
@@ -247,7 +246,7 @@ mod zk {
 
             // encrypt plaintext using the public-key
             let (ciphertext_1, ciphertext_2) =
-                encrypt_gadget(composer, public_key, plaintext, r)?;
+                zk::encrypt_unchecked(composer, public_key, plaintext, r)?;
 
             // assert that the ciphertext is as expected
             composer.assert_equal_public_point(
@@ -260,7 +259,7 @@ mod zk {
             );
 
             // decrypt
-            let dec_plaintext = decrypt_gadget(
+            let dec_plaintext = zk::decrypt_unchecked(
                 composer,
                 secret_key,
                 ciphertext_1,
@@ -288,13 +287,13 @@ mod zk {
         let pp = PublicParameters::setup(1 << CAPACITY, &mut rng).unwrap();
 
         let (prover, verifier) =
-            Compiler::compile::<ElGamalV2Circuit>(&pp, LABEL)
+            Compiler::compile::<ElGamalInCircuitCheck>(&pp, LABEL)
                 .expect("failed to compile circuit");
 
         let (proof, public_inputs) = prover
             .prove(
                 &mut rng,
-                &ElGamalV2Circuit::new(
+                &ElGamalInCircuitCheck::new(
                     &pk,
                     &sk,
                     &message,
