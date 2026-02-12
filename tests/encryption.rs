@@ -73,6 +73,7 @@ mod zk {
     use jubjub_elgamal::Encryption;
     use jubjub_elgamal::zk::{
         DecryptFrom as DecryptFromZK, Encryption as EncryptionZK,
+        decrypt as decrypt_gadget, encrypt as encrypt_gadget,
     };
     use rand::SeedableRng;
     use rand::rngs::StdRng;
@@ -193,6 +194,113 @@ mod zk {
                     &message,
                     &r,
                     &ciphertext,
+                ),
+            )
+            .expect("failed to prove");
+
+        verifier
+            .verify(&proof, &public_inputs)
+            .expect("failed to verify proof");
+    }
+
+    #[derive(Default, Debug)]
+    pub struct ElGamalV2Circuit {
+        public_key: JubJubAffine,
+        secret_key: JubJubScalar,
+        plaintext: JubJubAffine,
+        r: JubJubScalar,
+        expected_ciphertext_1: JubJubAffine,
+        expected_ciphertext_2: JubJubAffine,
+    }
+
+    impl ElGamalV2Circuit {
+        pub fn new(
+            public_key: &JubJubExtended,
+            secret_key: &JubJubScalar,
+            plaintext: &JubJubExtended,
+            r: &JubJubScalar,
+            expected_ciphertext_1: &JubJubExtended,
+            expected_ciphertext_2: &JubJubExtended,
+        ) -> Self {
+            Self {
+                public_key: JubJubAffine::from(public_key),
+                secret_key: *secret_key,
+                plaintext: JubJubAffine::from(plaintext),
+                r: *r,
+                expected_ciphertext_1: JubJubAffine::from(
+                    expected_ciphertext_1,
+                ),
+                expected_ciphertext_2: JubJubAffine::from(
+                    expected_ciphertext_2,
+                ),
+            }
+        }
+    }
+
+    impl Circuit for ElGamalV2Circuit {
+        fn circuit(&self, composer: &mut Composer) -> Result<(), Error> {
+            // import inputs
+            let public_key = composer.append_point(self.public_key);
+            let secret_key = composer.append_witness(self.secret_key);
+            let plaintext = composer.append_point(self.plaintext);
+            let r = composer.append_witness(self.r);
+
+            // encrypt plaintext using the public-key
+            let (ciphertext_1, ciphertext_2) =
+                encrypt_gadget(composer, public_key, plaintext, r)?;
+
+            // assert that the ciphertext is as expected
+            composer.assert_equal_public_point(
+                ciphertext_1,
+                self.expected_ciphertext_1,
+            );
+            composer.assert_equal_public_point(
+                ciphertext_2,
+                self.expected_ciphertext_2,
+            );
+
+            // decrypt
+            let dec_plaintext = decrypt_gadget(
+                composer,
+                secret_key,
+                ciphertext_1,
+                ciphertext_2,
+            );
+
+            // assert decoded plaintext is the same as the original
+            composer.assert_equal_point(dec_plaintext, plaintext);
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn encrypt_decrypt_v2() {
+        let mut rng = StdRng::seed_from_u64(0xc0b);
+
+        let sk = JubJubScalar::random(&mut rng);
+        let pk = GENERATOR_EXTENDED * sk;
+
+        let message = GENERATOR_EXTENDED * JubJubScalar::from(1234u64);
+        let r = JubJubScalar::random(&mut rng);
+        let (ciphertext, _) = Encryption::encrypt(&pk, &message, None, &r);
+
+        let pp = PublicParameters::setup(1 << CAPACITY, &mut rng).unwrap();
+
+        let (prover, verifier) =
+            Compiler::compile::<ElGamalV2Circuit>(&pp, LABEL)
+                .expect("failed to compile circuit");
+
+        let (proof, public_inputs) = prover
+            .prove(
+                &mut rng,
+                &ElGamalV2Circuit::new(
+                    &pk,
+                    &sk,
+                    &message,
+                    &r,
+                    ciphertext.c1(),
+                    ciphertext.c2(),
                 ),
             )
             .expect("failed to prove");
