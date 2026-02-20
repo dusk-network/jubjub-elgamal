@@ -44,15 +44,21 @@ pub struct Encryption {
 
 impl Encryption {
     /// Creates a new [`Encryption`] from two points
-    #[must_use]
     pub fn new(
         ciphertext_1: JubJubExtended,
         ciphertext_2: JubJubExtended,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, DuskBytesError> {
+        if !bool::from(ciphertext_1.is_prime_order()) {
+            return Err(DuskBytesError::InvalidData);
+        }
+        if !bool::from(ciphertext_2.is_prime_order()) {
+            return Err(DuskBytesError::InvalidData);
+        }
+
+        Ok(Self {
             ciphertext_1,
             ciphertext_2,
-        }
+        })
     }
 
     /// Returns the `ciphertext_1` point of the [`Encryption`]
@@ -166,9 +172,8 @@ impl Serializable<64> for Encryption {
         let ciphertext_2: JubJubExtended =
             JubJubAffine::from_slice(&buf[32..])?.into();
 
-        Ok(Encryption {
-            ciphertext_1,
-            ciphertext_2,
-        })
+        // We use new() to validate the points and return an error
+        // if they are not valid
+        Encryption::new(ciphertext_1, ciphertext_2)
     }
 }

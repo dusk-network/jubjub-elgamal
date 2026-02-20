@@ -5,7 +5,7 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 
 use dusk_bytes::Serializable;
-use dusk_jubjub::{GENERATOR_EXTENDED, JubJubScalar};
+use dusk_jubjub::{GENERATOR_EXTENDED, JubJubAffine, JubJubScalar};
 use ff::Field;
 use jubjub_elgamal::{DecryptFrom, Encryption};
 use rand::SeedableRng;
@@ -55,11 +55,27 @@ fn test_bytes() {
     let mut rng = StdRng::seed_from_u64(0xc0b);
     let point = GENERATOR_EXTENDED * &JubJubScalar::random(&mut rng);
 
-    let ciphertext = Encryption::new(point, point);
+    let ciphertext = Encryption::new(point, point).unwrap();
 
     assert_eq!(
         ciphertext,
         Encryption::from_bytes(&ciphertext.to_bytes()).unwrap()
+    );
+
+    // Create a small order point
+    let small_order_point = JubJubAffine::identity();
+    assert!(!bool::from(small_order_point.is_prime_order()));
+
+    let mut bad_ciphertext_bytes = [0u8; 64];
+    bad_ciphertext_bytes[..32].copy_from_slice(&small_order_point.to_bytes());
+    bad_ciphertext_bytes[32..]
+        .copy_from_slice(&JubJubAffine::from(point).to_bytes());
+
+    // This should fail due to small order point in c1
+    let result = Encryption::from_bytes(&bad_ciphertext_bytes);
+    assert!(
+        result.is_err(),
+        "Deserialization should reject small order point in c1."
     );
 }
 
