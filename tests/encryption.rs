@@ -343,7 +343,7 @@ mod zk {
         let r = JubJubScalar::random(&mut rng);
 
         // not involved in this test
-        let ciphertext = Encryption::new(message, message);
+        let ciphertext = Encryption::new(message, message).unwrap();
 
         let pp = PublicParameters::setup(1 << CAPACITY, &mut rng).unwrap();
 
