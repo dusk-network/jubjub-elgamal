@@ -55,8 +55,8 @@ fn test_bytes() {
     let mut rng = StdRng::seed_from_u64(0xc0b);
     let point = GENERATOR_EXTENDED * &JubJubScalar::random(&mut rng);
 
-let ciphertext = Encryption::new(point, point)
-    .expect("prime-order points should construct Encryption");
+    let ciphertext = Encryption::new(point, point)
+        .expect("prime-order points should construct Encryption");
 
     assert_eq!(
         ciphertext,
