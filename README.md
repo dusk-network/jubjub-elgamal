@@ -11,6 +11,8 @@ The ElGamal encryption system is an asymmetric key encryption algorithm for publ
 Its security relies on the difficulty of computing discrete logarithms over finite fields.
 The implementation has been created using the field elements of the [`jubjub`](https://github.com/dusk-network/jubjub) elliptic curve.
 
+NOTE: keep in mind that ElGamal ciphertexts are malleable by default. Use your own methods to ensure that the ciphertexts to decrypt are legit.
+
 ## Algorithm
 
 ### Notation
