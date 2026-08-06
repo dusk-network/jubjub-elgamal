@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Adapt ZK gadgets to Plonk's torsion-free witness point API [#28]
+
 ## [0.5.0] - 2026-02-27
 
 ### Added
@@ -63,6 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add initial implementation [#1]
 
 <!-- ISSUES -->
+[#28]: https://github.com/dusk-network/jubjub-elgamal/issues/28
 [#25]: https://github.com/dusk-network/jubjub-elgamal/issues/25
 [#9]: https://github.com/dusk-network/jubjub-elgamal/issues/9
 [#11]: https://github.com/dusk-network/jubjub-elgamal/issues/11

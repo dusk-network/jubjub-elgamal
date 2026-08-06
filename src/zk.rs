@@ -9,26 +9,33 @@ use dusk_bytes::Serializable;
 use dusk_jubjub::GENERATOR;
 use dusk_plonk::prelude::*;
 
+// Point arguments use `TorsionFreeWitnessPoint` so callers must establish
+// subgroup membership at the circuit boundary before invoking these gadgets.
+
 /// Enumeration used to decrypt ciphertexts in-circuit
 pub enum DecryptFrom {
     /// From a secret key
     SecretKey(Witness),
     /// From a shared key
-    SharedKey(WitnessPoint),
+    SharedKey(TorsionFreeWitnessPoint),
 }
 
-/// `ElGamal` encryption of a [`JubJubExtended`] plaintext
-/// in a Witness form, meant to be used in-circuit
+/// `ElGamal` encryption of a [`JubJubExtended`] plaintext in a
+/// subgroup-qualified witness form, meant to be used in-circuit.
 #[derive(Debug)]
 pub struct Encryption {
-    pub(crate) ciphertext_1: WitnessPoint,
-    pub(crate) ciphertext_2: WitnessPoint,
+    pub(crate) ciphertext_1: TorsionFreeWitnessPoint,
+    pub(crate) ciphertext_2: TorsionFreeWitnessPoint,
 }
 
 impl Encryption {
-    /// Creates a new [`Encryption`] from two Witness points
+    /// Creates a new [`Encryption`] from two subgroup-qualified witness
+    /// points.
     #[must_use]
-    pub fn new(ciphertext_1: WitnessPoint, ciphertext_2: WitnessPoint) -> Self {
+    pub fn new(
+        ciphertext_1: TorsionFreeWitnessPoint,
+        ciphertext_2: TorsionFreeWitnessPoint,
+    ) -> Self {
         Self {
             ciphertext_1,
             ciphertext_2,
@@ -38,19 +45,19 @@ impl Encryption {
     /// Returns the `ciphertext_1` point of the [`Encryption`] in a Witness
     /// form.
     #[must_use]
-    pub fn c1(&self) -> &WitnessPoint {
+    pub fn c1(&self) -> &TorsionFreeWitnessPoint {
         &self.ciphertext_1
     }
 
     /// Returns the `ciphertext_2` point of the [`Encryption`] in a Witness
     /// form.
     #[must_use]
-    pub fn c2(&self) -> &WitnessPoint {
+    pub fn c2(&self) -> &TorsionFreeWitnessPoint {
         &self.ciphertext_2
     }
 
     /// Uses the given `public_key` and a fresh random number `r` to encrypt a
-    /// plaintext [`WitnessPoint`] in a gadget that can be used in a
+    /// plaintext [`TorsionFreeWitnessPoint`] in a gadget that can be used in a
     /// plonk-circuit.
     ///
     /// ## Return
@@ -62,11 +69,11 @@ impl Encryption {
     /// be decrypted.
     pub fn encrypt(
         composer: &mut Composer,
-        public_key: WitnessPoint,
-        plaintext: WitnessPoint,
-        generator: Option<WitnessPoint>,
+        public_key: TorsionFreeWitnessPoint,
+        plaintext: TorsionFreeWitnessPoint,
+        generator: Option<TorsionFreeWitnessPoint>,
         r: Witness,
-    ) -> Result<(Self, WitnessPoint), Error> {
+    ) -> Result<(Self, TorsionFreeWitnessPoint), Error> {
         let ciphertext_1 = match generator {
             Some(generator) => composer.component_mul_point(r, generator),
             _ => composer.component_mul_generator(r, GENERATOR)?,
@@ -77,7 +84,7 @@ impl Encryption {
 
         // we check if the original message can be recovered
         let dec = composer.component_sub_point(ciphertext_2, shared_key);
-        composer.assert_equal_point(dec, plaintext);
+        composer.assert_equal_point(dec.into(), plaintext.into());
 
         Ok((
             Self {
@@ -105,11 +112,11 @@ impl Encryption {
     /// be decrypted.
     pub fn encrypt_u64(
         composer: &mut Composer,
-        public_key: WitnessPoint,
+        public_key: TorsionFreeWitnessPoint,
         plaintext: Witness,
-        generator: Option<WitnessPoint>,
+        generator: Option<TorsionFreeWitnessPoint>,
         r: Witness,
-    ) -> Result<(Self, WitnessPoint), Error> {
+    ) -> Result<(Self, TorsionFreeWitnessPoint), Error> {
         // we take the u64 plaintext from the Witness
         let plaintext_le_u64 =
             &composer.index(plaintext).to_bytes()[..u64::SIZE];
@@ -117,8 +124,10 @@ impl Encryption {
             u64::from_le_bytes(plaintext_le_u64.try_into().unwrap());
 
         // we map the plaintext to a point on the curve
+        let mapped_plaintext = composer
+            .append_point(JubJubExtended::map_to_point(&plaintext_u64))?;
         let mapped_plaintext =
-            composer.append_point(JubJubExtended::map_to_point(&plaintext_u64));
+            composer.assert_torsion_free_point(mapped_plaintext);
 
         // we take the 64-bit representation of the Witness u64 plaintext
         // as an array of Witnesses
@@ -149,13 +158,13 @@ impl Encryption {
     /// original plaintext in a gadget that can be used in a plonk-circuit.
     ///
     /// ## Return
-    /// Returns the [`WitnessPoint`] plaintext.
+    /// Returns the [`TorsionFreeWitnessPoint`] plaintext.
     #[must_use]
     pub fn decrypt(
         &self,
         composer: &mut Composer,
         key: &DecryptFrom,
-    ) -> WitnessPoint {
+    ) -> TorsionFreeWitnessPoint {
         match key {
             DecryptFrom::SecretKey(secret_key) => {
                 let c1_sk = composer
@@ -219,16 +228,16 @@ impl Encryption {
 /// produces fewer gates, matching the circuit description from v0.2.0.
 ///
 /// # Return
-/// Returns the ciphertext tuple `(WitnessPoint, WitnessPoint)`.
+/// Returns the ciphertext tuple of [`TorsionFreeWitnessPoint`]s.
 ///
 /// # Errors
 /// This function will error if `r` is not a valid jubjub-scalar.
 pub fn encrypt_unchecked(
     composer: &mut Composer,
-    public_key: WitnessPoint,
-    plaintext: WitnessPoint,
+    public_key: TorsionFreeWitnessPoint,
+    plaintext: TorsionFreeWitnessPoint,
     r: Witness,
-) -> Result<(WitnessPoint, WitnessPoint), Error> {
+) -> Result<(TorsionFreeWitnessPoint, TorsionFreeWitnessPoint), Error> {
     let r_point = composer.component_mul_point(r, public_key);
     let ciphertext_1 = composer.component_mul_generator(r, GENERATOR)?;
     let ciphertext_2 = composer.component_add_point(plaintext, r_point);
@@ -243,14 +252,14 @@ pub fn encrypt_unchecked(
 /// the circuit description from v0.2.0.
 ///
 /// ## Return
-/// Returns the [`WitnessPoint`] plaintext.
+/// Returns the [`TorsionFreeWitnessPoint`] plaintext.
 #[must_use]
 pub fn decrypt_unchecked(
     composer: &mut Composer,
     secret_key: Witness,
-    ciphertext_1: WitnessPoint,
-    ciphertext_2: WitnessPoint,
-) -> WitnessPoint {
+    ciphertext_1: TorsionFreeWitnessPoint,
+    ciphertext_2: TorsionFreeWitnessPoint,
+) -> TorsionFreeWitnessPoint {
     let c1_sk = composer.component_mul_point(secret_key, ciphertext_1);
 
     // return plaintext

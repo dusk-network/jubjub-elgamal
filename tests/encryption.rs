@@ -97,6 +97,24 @@ mod zk {
     static LABEL: &[u8; 12] = b"dusk-network";
     const CAPACITY: usize = 14; // capacity required for the setup
 
+    fn append_torsion_free(
+        composer: &mut Composer,
+        point: impl Into<JubJubExtended>,
+    ) -> Result<TorsionFreeWitnessPoint, Error> {
+        let point = composer.append_point(point)?;
+        Ok(composer.assert_torsion_free_point(point))
+    }
+
+    fn small_order_point() -> JubJubExtended {
+        let point = JubJubAffine::from_raw_unchecked(
+            BlsScalar::zero(),
+            -BlsScalar::one(),
+        );
+        assert!(bool::from(point.is_on_curve()));
+        assert!(!bool::from(JubJubExtended::from(point).is_torsion_free()));
+        point.into()
+    }
+
     #[derive(Default, Debug)]
     pub struct ElGamalCircuit<const MUST_PASS: bool> {
         public_key: JubJubAffine,
@@ -127,9 +145,9 @@ mod zk {
     impl<const MUST_PASS: bool> Circuit for ElGamalCircuit<MUST_PASS> {
         fn circuit(&self, composer: &mut Composer) -> Result<(), Error> {
             // import inputs
-            let public_key = composer.append_point(self.public_key);
+            let public_key = append_torsion_free(composer, self.public_key)?;
             let secret_key = composer.append_witness(self.secret_key);
-            let plaintext = composer.append_point(self.plaintext);
+            let plaintext = append_torsion_free(composer, self.plaintext)?;
             let r = composer.append_witness(self.r);
 
             // encrypt plaintext using the public key
@@ -141,30 +159,32 @@ mod zk {
             if MUST_PASS {
                 // assert that the ciphertext is as expected
                 composer.assert_equal_public_point(
-                    *ciphertext.c1(),
-                    self.expected_ciphertext.c1(),
-                );
+                    (*ciphertext.c1()).into(),
+                    *self.expected_ciphertext.c1(),
+                )?;
                 composer.assert_equal_public_point(
-                    *ciphertext.c2(),
-                    self.expected_ciphertext.c2(),
-                );
+                    (*ciphertext.c2()).into(),
+                    *self.expected_ciphertext.c2(),
+                )?;
 
                 // decrypt with sk
                 let dec_plaintext = ciphertext
                     .decrypt(composer, &DecryptFromZK::SecretKey(secret_key));
 
                 // assert decoded plaintext is the same as the original
-                composer.assert_equal_point(dec_plaintext, plaintext);
+                composer
+                    .assert_equal_point(dec_plaintext.into(), plaintext.into());
 
                 // decrypt with shared key
                 let dec_plaintext = ciphertext
                     .decrypt(composer, &DecryptFromZK::SharedKey(shared_key));
-                composer.assert_equal_point(dec_plaintext, plaintext);
+                composer
+                    .assert_equal_point(dec_plaintext.into(), plaintext.into());
 
                 // encrypt / decrypt plaintext using custom generator
-                let custom_gen = composer.append_point(
+                let custom_gen = composer.append_constant_point(
                     GENERATOR_EXTENDED * JubJubScalar::from(1234u64),
-                );
+                )?;
                 let custom_pk =
                     composer.component_mul_point(secret_key, custom_gen);
                 let (custom_enc, _) = EncryptionZK::encrypt(
@@ -177,7 +197,10 @@ mod zk {
 
                 let custom_dec_plaintext = custom_enc
                     .decrypt(composer, &DecryptFromZK::SecretKey(secret_key));
-                composer.assert_equal_point(custom_dec_plaintext, plaintext);
+                composer.assert_equal_point(
+                    custom_dec_plaintext.into(),
+                    plaintext.into(),
+                );
             }
 
             Ok(())
@@ -256,9 +279,9 @@ mod zk {
     impl Circuit for ElGamalInCircuitCheck {
         fn circuit(&self, composer: &mut Composer) -> Result<(), Error> {
             // import inputs
-            let public_key = composer.append_point(self.public_key);
+            let public_key = append_torsion_free(composer, self.public_key)?;
             let secret_key = composer.append_witness(self.secret_key);
-            let plaintext = composer.append_point(self.plaintext);
+            let plaintext = append_torsion_free(composer, self.plaintext)?;
             let r = composer.append_witness(self.r);
 
             // encrypt plaintext using the public-key
@@ -267,13 +290,13 @@ mod zk {
 
             // assert that the ciphertext is as expected
             composer.assert_equal_public_point(
-                ciphertext_1,
+                ciphertext_1.into(),
                 self.expected_ciphertext_1,
-            );
+            )?;
             composer.assert_equal_public_point(
-                ciphertext_2,
+                ciphertext_2.into(),
                 self.expected_ciphertext_2,
-            );
+            )?;
 
             // decrypt
             let dec_plaintext = zk::decrypt_unchecked(
@@ -284,7 +307,7 @@ mod zk {
             );
 
             // assert decoded plaintext is the same as the original
-            composer.assert_equal_point(dec_plaintext, plaintext);
+            composer.assert_equal_point(dec_plaintext.into(), plaintext.into());
 
             Ok(())
         }
@@ -327,24 +350,14 @@ mod zk {
     }
 
     #[test]
-    #[should_panic]
-    fn bad_encryption() {
+    fn checked_encryption_rejects_small_order_inputs() {
         let mut rng = StdRng::seed_from_u64(0xc0b);
 
         let sk = JubJubScalar::random(&mut rng);
-        let pk = GENERATOR_EXTENDED * sk;
-
-        // we set a message being a point not on the curve
-        let message =
-            JubJubExtended::from_affine(JubJubAffine::from_raw_unchecked(
-                BlsScalar::from(42),
-                BlsScalar::from(42),
-            ));
-
+        let public_key = GENERATOR_EXTENDED * sk;
+        let plaintext = GENERATOR_EXTENDED * JubJubScalar::from(1234u64);
+        let small_order = small_order_point();
         let r = JubJubScalar::random(&mut rng);
-
-        // not involved in this test
-        let ciphertext = Encryption::new(message, message).unwrap();
 
         let pp = PublicParameters::setup(1 << CAPACITY, &mut rng).unwrap();
 
@@ -352,18 +365,56 @@ mod zk {
             Compiler::compile::<ElGamalCircuit<false>>(&pp, LABEL)
                 .expect("failed to compile circuit");
 
-        // this should fail
-        let (_proof, _public_inputs) = prover
-            .prove(
-                &mut rng,
-                &ElGamalCircuit::<false>::new(
-                    &pk,
-                    &sk,
-                    &message,
-                    &r,
-                    &ciphertext,
-                ),
-            )
-            .expect("failed to prove");
+        for (public_key, plaintext) in
+            [(small_order, plaintext), (public_key, small_order)]
+        {
+            let circuit = ElGamalCircuit::<false>::new(
+                &public_key,
+                &sk,
+                &plaintext,
+                &r,
+                &Encryption::default(),
+            );
+            assert!(
+                prover.prove(&mut rng, &circuit).is_err(),
+                "small-order input should not prove"
+            );
+        }
+    }
+
+    #[test]
+    fn unchecked_encryption_rejects_small_order_inputs() {
+        let mut rng = StdRng::seed_from_u64(0xc0b);
+
+        let zero = JubJubScalar::zero();
+        let public_key = GENERATOR_EXTENDED;
+        let plaintext = GENERATOR_EXTENDED * JubJubScalar::from(1234u64);
+        let small_order = small_order_point();
+        let ciphertext_1 = GENERATOR_EXTENDED * zero;
+
+        let pp = PublicParameters::setup(1 << CAPACITY, &mut rng).unwrap();
+        let (prover, _verifier) =
+            Compiler::compile::<ElGamalInCircuitCheck>(&pp, LABEL)
+                .expect("failed to compile circuit");
+
+        // With a zero blinder and secret key, every other constraint is
+        // satisfied: c1 is the identity and c2 is the plaintext. Rejection is
+        // therefore attributable to the subgroup boundary checks.
+        for (public_key, plaintext) in
+            [(small_order, plaintext), (public_key, small_order)]
+        {
+            let circuit = ElGamalInCircuitCheck::new(
+                &public_key,
+                &zero,
+                &plaintext,
+                &zero,
+                &ciphertext_1,
+                &plaintext,
+            );
+            assert!(
+                prover.prove(&mut rng, &circuit).is_err(),
+                "small-order input should not prove"
+            );
+        }
     }
 }
