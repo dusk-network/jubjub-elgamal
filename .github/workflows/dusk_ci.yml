@@ -27,3 +27,9 @@ jobs:
     uses: dusk-network/.github/.github/workflows/run-tests.yml@main
     with:
       test_flags: --features=zk
+
+  test_rkyv:
+    name: test rkyv
+    uses: dusk-network/.github/.github/workflows/run-tests.yml@main
+    with:
+      test_flags: --features=rkyv-impl
