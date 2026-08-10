@@ -5,6 +5,8 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 
 use dusk_bytes::Serializable;
+#[cfg(feature = "rkyv-impl")]
+use dusk_jubjub::{BlsScalar, JubJubExtended};
 use dusk_jubjub::{GENERATOR_EXTENDED, JubJubAffine, JubJubScalar};
 use ff::Field;
 use jubjub_elgamal::{DecryptFrom, Encryption};
@@ -78,6 +80,77 @@ fn test_bytes() {
         result.is_err(),
         "Deserialization should reject small order point in c1."
     );
+}
+
+#[cfg(feature = "rkyv-impl")]
+#[test]
+fn rkyv_rejects_small_order_ciphertext() {
+    let torsion = JubJubExtended::from(JubJubAffine::from_raw_unchecked(
+        BlsScalar::from_raw([
+            0xd92e_6a79_2720_0d43,
+            0x7aa4_1ac4_3dae_8582,
+            0xeaaa_e086_a166_18d1,
+            0x71d4_df38_ba9e_7973,
+        ]),
+        BlsScalar::from_raw([
+            0xff0d_2068_eff4_96dd,
+            0x9106_ee90_f384_a4a1,
+            0x16a1_3035_ad4d_7266,
+            0x4958_bdb2_1966_982e,
+        ]),
+    ));
+    assert!(!bool::from(torsion.is_torsion_free()));
+
+    let (bad_c1, _) = Encryption::encrypt(
+        &GENERATOR_EXTENDED,
+        &GENERATOR_EXTENDED,
+        Some(&torsion),
+        &JubJubScalar::one(),
+    );
+    let (bad_c2, _) = Encryption::encrypt(
+        &(GENERATOR_EXTENDED * JubJubScalar::zero()),
+        &torsion,
+        None,
+        &JubJubScalar::one(),
+    );
+
+    for ciphertext in [bad_c1, bad_c2] {
+        let bytes = rkyv::to_bytes::<_, 64>(&ciphertext).unwrap();
+
+        assert!(rkyv::check_archived_root::<Encryption>(&bytes).is_err());
+        assert!(rkyv::from_bytes::<Encryption>(&bytes).is_err());
+    }
+}
+
+#[cfg(feature = "rkyv-impl")]
+#[test]
+fn rkyv_rejects_identity_and_malformed_ciphertext() {
+    let valid_point = JubJubAffine::from(GENERATOR_EXTENDED).to_bytes();
+    let identity = JubJubAffine::identity().to_bytes();
+
+    for bytes in [
+        [identity, valid_point].concat(),
+        [valid_point, identity].concat(),
+        [0xff; Encryption::SIZE].to_vec(),
+    ] {
+        assert!(rkyv::check_archived_root::<Encryption>(&bytes).is_err());
+        assert!(rkyv::from_bytes::<Encryption>(&bytes).is_err());
+    }
+}
+
+#[cfg(feature = "rkyv-impl")]
+#[test]
+fn rkyv_roundtrip() {
+    let ciphertext = Encryption::new(
+        GENERATOR_EXTENDED,
+        GENERATOR_EXTENDED * JubJubScalar::from(2u64),
+    )
+    .unwrap();
+    let bytes = rkyv::to_bytes::<_, 64>(&ciphertext).unwrap();
+
+    assert_eq!(bytes.len(), Encryption::SIZE);
+    assert!(rkyv::check_archived_root::<Encryption>(&bytes).is_ok());
+    assert_eq!(rkyv::from_bytes::<Encryption>(&bytes).unwrap(), ciphertext);
 }
 
 #[cfg(feature = "zk")]

@@ -9,13 +9,18 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
+#[cfg(feature = "rkyv-impl")]
+use core::{error::Error, fmt};
+
+#[cfg(feature = "rkyv-impl")]
+use bytecheck::CheckBytes;
 use dusk_bytes::{DeserializableSlice, Error as DuskBytesError, Serializable};
 use dusk_jubjub::{
     GENERATOR_EXTENDED, JubJubAffine, JubJubExtended, JubJubScalar,
 };
 
 #[cfg(feature = "rkyv-impl")]
-use rkyv::{Archive, Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Fallible, Serialize};
 
 /// This module implements the equivalent plonk-gadgets for encrypting and
 /// decrypting. These gadgets can be used as part of a larger circuit.
@@ -32,14 +37,84 @@ pub enum DecryptFrom {
 
 /// `ElGamal` encryption of a [`JubJubExtended`] plaintext
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(
-    feature = "rkyv-impl",
-    derive(Archive, Deserialize, Serialize),
-    archive_attr(derive(bytecheck::CheckBytes))
-)]
 pub struct Encryption {
     ciphertext_1: JubJubExtended,
     ciphertext_2: JubJubExtended,
+}
+
+/// Archived canonical byte representation of an [`Encryption`].
+#[cfg(feature = "rkyv-impl")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct ArchivedEncryption([u8; 64]);
+
+/// Resolver for archiving an [`Encryption`].
+#[cfg(feature = "rkyv-impl")]
+pub type EncryptionResolver = ();
+
+/// Error returned when archived bytes do not encode a valid [`Encryption`].
+#[cfg(feature = "rkyv-impl")]
+#[derive(Debug)]
+pub struct InvalidArchivedEncryption;
+
+#[cfg(feature = "rkyv-impl")]
+impl fmt::Display for InvalidArchivedEncryption {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("invalid archived ElGamal encryption")
+    }
+}
+
+#[cfg(feature = "rkyv-impl")]
+impl Error for InvalidArchivedEncryption {}
+
+#[cfg(feature = "rkyv-impl")]
+impl<C: ?Sized> CheckBytes<C> for ArchivedEncryption {
+    type Error = InvalidArchivedEncryption;
+
+    unsafe fn check_bytes<'a>(
+        value: *const Self,
+        _: &mut C,
+    ) -> Result<&'a Self, Self::Error> {
+        let value = unsafe { &*value };
+        Encryption::from_bytes(&value.0)
+            .map(|_| value)
+            .map_err(|_| InvalidArchivedEncryption)
+    }
+}
+
+#[cfg(feature = "rkyv-impl")]
+impl Archive for Encryption {
+    type Archived = ArchivedEncryption;
+    type Resolver = EncryptionResolver;
+
+    unsafe fn resolve(
+        &self,
+        _: usize,
+        _: Self::Resolver,
+        out: *mut Self::Archived,
+    ) {
+        unsafe { out.write(ArchivedEncryption(self.to_bytes())) };
+    }
+}
+
+#[cfg(feature = "rkyv-impl")]
+impl<S: Fallible + ?Sized> Serialize<S> for Encryption {
+    fn serialize(&self, _: &mut S) -> Result<Self::Resolver, S::Error> {
+        Ok(())
+    }
+}
+
+#[cfg(feature = "rkyv-impl")]
+/// # Panics
+///
+/// Panics if this archive was obtained through unchecked access and does not
+/// contain a valid [`Encryption`]. Validate archives with [`CheckBytes`] before
+/// deserializing them.
+impl<D: Fallible + ?Sized> Deserialize<Encryption, D> for ArchivedEncryption {
+    fn deserialize(&self, _: &mut D) -> Result<Encryption, D::Error> {
+        Ok(Encryption::from_bytes(&self.0)
+            .expect("archived Encryption must be validated"))
+    }
 }
 
 impl Encryption {
