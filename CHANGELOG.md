@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Raise the MSRV to Rust 1.96.1 [#33]
 - Archive `Encryption` using its validated canonical byte representation [#31]
 
 ## [0.5.0] - 2026-02-27
@@ -67,6 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add initial implementation [#1]
 
 <!-- ISSUES -->
+[#33]: https://github.com/dusk-network/jubjub-elgamal/issues/33
 [#31]: https://github.com/dusk-network/jubjub-elgamal/issues/31
 [#25]: https://github.com/dusk-network/jubjub-elgamal/issues/25
 [#9]: https://github.com/dusk-network/jubjub-elgamal/issues/9
