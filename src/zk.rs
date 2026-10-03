@@ -190,25 +190,40 @@ impl Encryption {
     }
 }
 
-/// Constrains `point` to the form [`JubJubExtended::map_to_point`] gives the
-/// u64 `value`: an even `x`, and `y = value + 2^64·k` with `value < 2^64` and
-/// `k < 2^190`, so that `value` is the low 64 bits of the canonical `y`.
+/// `2^-1` in the BLS12-381 scalar field.
+const HALF: BlsScalar = BlsScalar::from_raw([
+    0x7fff_ffff_8000_0001,
+    0xa9de_d201_7fff_2dff,
+    0x199c_ec04_04d0_ec02,
+    0x39f6_d3a9_94ce_bea4,
+]);
+
+/// `2^-64` in the BLS12-381 scalar field.
+const SHIFT: BlsScalar = BlsScalar::from_raw([
+    0xac43_fffd_0001_a403,
+    0x16e1_f3f5_a29e_dff6,
+    0x95ae_b36c_acca_82b5,
+    0x73ed_a752_b5af_d5f4,
+]);
+
+/// Constrains `point` to have an even `x` and a canonical `y` with `value` as
+/// its low 64 bits: `y = value + 2^64·k` with `value < 2^64` and `k < 2^190`.
+///
+/// This does not pin `point` to the output of [`JubJubExtended::map_to_point`]:
+/// `k` is not constrained to be minimal and `point` is not checked to be in
+/// the prime-order subgroup, see
+/// <https://github.com/dusk-network/jubjub-elgamal/issues/37>.
 fn assert_u64_map(
     composer: &mut Composer,
     point: WitnessPoint,
     value: Witness,
 ) {
-    let half = BlsScalar::from(2).invert().expect("2 is invertible");
-    let shift = BlsScalar::pow_of_2(64)
-        .invert()
-        .expect("2^64 is invertible");
-
     // k = (y - value) / 2^64
     let k = composer.gate_add(
         Constraint::new()
-            .left(shift)
+            .left(SHIFT)
             .a(*point.y())
-            .right(-shift)
+            .right(-SHIFT)
             .b(value),
     );
     composer.component_range::<32>(value);
@@ -216,9 +231,9 @@ fn assert_u64_map(
 
     // x is even iff x/2 <= (p - 1)/2, i.e. iff both x/2 and
     // (p - 1)/2 - x/2 = -(x + 1)/2 fit in 254 bits
-    let x_half = composer.gate_add(Constraint::new().left(half).a(*point.x()));
+    let x_half = composer.gate_add(Constraint::new().left(HALF).a(*point.x()));
     let x_half_neg = composer
-        .gate_add(Constraint::new().left(-half).a(*point.x()).constant(-half));
+        .gate_add(Constraint::new().left(-HALF).a(*point.x()).constant(-HALF));
     composer.component_range::<127>(x_half);
     composer.component_range::<127>(x_half_neg);
 }
@@ -268,4 +283,47 @@ pub fn decrypt_unchecked(
 
     // return plaintext
     composer.component_sub_point(ciphertext_2, c1_sk)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+
+    #[test]
+    fn inverse_constants() {
+        assert_eq!(HALF * BlsScalar::from(2), BlsScalar::one());
+        assert_eq!(SHIFT * BlsScalar::pow_of_2(64), BlsScalar::one());
+    }
+
+    #[derive(Default)]
+    struct MapCircuit(JubJubAffine, BlsScalar);
+
+    impl Circuit for MapCircuit {
+        fn circuit(&self, composer: &mut Composer) -> Result<(), Error> {
+            let point = composer.append_point(self.0);
+            let value = composer.append_witness(self.1);
+            assert_u64_map(composer, point, value);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn u64_map_rejects_value_above_u64() {
+        let mut rng = StdRng::seed_from_u64(0xc0b);
+        let pp = PublicParameters::setup(1 << 10, &mut rng).unwrap();
+        let (prover, verifier) =
+            Compiler::compile::<MapCircuit>(&pp, b"u64-map").unwrap();
+        let point = JubJubAffine::from(JubJubExtended::map_to_point(&18));
+        let mut prove = |value| {
+            prover
+                .prove(&mut rng, &MapCircuit(point, value))
+                .and_then(|(proof, pi)| verifier.verify(&proof, &pi))
+        };
+
+        prove(BlsScalar::from(18)).expect("map of 18 must verify");
+        // `18 - 2^64` raises `k` by one, which stays in range
+        assert!(prove(BlsScalar::from(18) - BlsScalar::pow_of_2(64)).is_err());
+    }
 }

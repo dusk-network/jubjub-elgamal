@@ -14,8 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Constrain the mapped point's canonical `y` and the sign of its `x` in the
-  `encrypt_u64` and `decrypt_u64` gadgets, matching `map_to_point` [#35]
+- Constrain the mapped point in the `encrypt_u64` and `decrypt_u64` gadgets to
+  a canonical `y` with the plaintext as its low 64 bits, and an even `x` [#35]
 
 ## [0.5.0] - 2026-02-27
 

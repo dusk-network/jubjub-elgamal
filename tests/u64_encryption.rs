@@ -236,16 +236,28 @@ mod zk {
         assert_eq!(plaintext, 18);
         assert!(prove_and_verify(forged, plaintext).is_err());
 
-        // A prime-order point with even `x` and `y >= 2^254`.
-        let point = (1u64..)
-            .map(|i| GENERATOR_EXTENDED * JubJubScalar::from(i))
-            .map(|p| {
-                let odd = JubJubAffine::from(p).get_u().to_bytes()[0] & 1;
-                if odd == 1 { -p } else { p }
-            })
-            .find(|p| JubJubAffine::from(p).get_v().to_bytes()[31] >= 0x40)
-            .unwrap();
-        let (forged, plaintext) = forge(point);
-        assert!(prove_and_verify(forged, plaintext).is_err());
+        // The first `±[i]G` whose `x` and `y` bytes match `pred`.
+        let find = |pred: fn([u8; 32], [u8; 32]) -> bool| {
+            (1u64..)
+                .map(|i| GENERATOR_EXTENDED * JubJubScalar::from(i))
+                .flat_map(|p| [p, -p])
+                .find(|p| {
+                    let p = JubJubAffine::from(p);
+                    pred(p.get_u().to_bytes(), p.get_v().to_bytes())
+                })
+                .unwrap()
+        };
+        // Each point fails exactly one of the range checks.
+        for point in [
+            // even `x`, `y >= 2^254`: fails the `k` check
+            find(|x, y| x[0] & 1 == 0 && y[31] >= 0x40),
+            // odd `x < 2^255 - p`, `y < 2^254`: fails the `x_half_neg` check
+            find(|x, y| x[0] & 1 == 1 && x[31] < 0x0c && y[31] < 0x40),
+            // odd `x > 2p - 2^255`, `y < 2^254`: fails the `x_half` check
+            find(|x, y| x[0] & 1 == 1 && x[31] >= 0x68 && y[31] < 0x40),
+        ] {
+            let (forged, plaintext) = forge(point);
+            assert!(prove_and_verify(forged, plaintext).is_err());
+        }
     }
 }
