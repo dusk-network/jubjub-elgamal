@@ -120,19 +120,8 @@ impl Encryption {
         let mapped_plaintext =
             composer.append_point(JubJubExtended::map_to_point(&plaintext_u64));
 
-        // we take the 64-bit representation of the Witness u64 plaintext
-        // as an array of Witnesses
-        let plaintext_decom = composer.component_decomposition::<64>(plaintext);
-
-        // we do the same with the map for its bit size (255)
-        let map = mapped_plaintext.y();
-        let map_decom = composer.component_decomposition::<255>(*map);
-
-        // we enforce both decompositions to be equal up to the 64th bit
-        plaintext_decom
-            .iter()
-            .zip(map_decom)
-            .for_each(|(bit_a, bit_b)| composer.assert_equal(*bit_a, bit_b));
+        // we enforce the mapped point to match the plaintext
+        assert_u64_map(composer, mapped_plaintext, plaintext);
 
         // we return the encryption of the mapped plaintext
         let (ciphertext, shared_key) = Self::encrypt(
@@ -194,20 +183,44 @@ impl Encryption {
             u64::from_le_bytes(dec_plaintext_le_u64.try_into().unwrap());
         let dec_plaintext = composer.append_witness(dec_plaintext_u64);
 
-        // we enforce the unmaped plaintext to match the actual
-        // decryption output up to the 64th bit
-        let map_plaintext_decom =
-            composer.component_decomposition::<255>(*mapped_dec_plaintext.y());
-        let dec_plaintext_decom =
-            composer.component_decomposition::<64>(dec_plaintext);
-
-        dec_plaintext_decom
-            .iter()
-            .zip(map_plaintext_decom)
-            .for_each(|(bit_a, bit_b)| composer.assert_equal(*bit_a, bit_b));
+        // we enforce the unmapped plaintext to match the decryption output
+        assert_u64_map(composer, mapped_dec_plaintext, dec_plaintext);
 
         dec_plaintext
     }
+}
+
+/// Constrains `point` to the form [`JubJubExtended::map_to_point`] gives the
+/// u64 `value`: an even `x`, and `y = value + 2^64·k` with `value < 2^64` and
+/// `k < 2^190`, so that `value` is the low 64 bits of the canonical `y`.
+fn assert_u64_map(
+    composer: &mut Composer,
+    point: WitnessPoint,
+    value: Witness,
+) {
+    let half = BlsScalar::from(2).invert().expect("2 is invertible");
+    let shift = BlsScalar::pow_of_2(64)
+        .invert()
+        .expect("2^64 is invertible");
+
+    // k = (y - value) / 2^64
+    let k = composer.gate_add(
+        Constraint::new()
+            .left(shift)
+            .a(*point.y())
+            .right(-shift)
+            .b(value),
+    );
+    composer.component_range::<32>(value);
+    composer.component_range::<95>(k);
+
+    // x is even iff x/2 <= (p - 1)/2, i.e. iff both x/2 and
+    // (p - 1)/2 - x/2 = -(x + 1)/2 fit in 254 bits
+    let x_half = composer.gate_add(Constraint::new().left(half).a(*point.x()));
+    let x_half_neg = composer
+        .gate_add(Constraint::new().left(-half).a(*point.x()).constant(-half));
+    composer.component_range::<127>(x_half);
+    composer.component_range::<127>(x_half_neg);
 }
 
 /// Uses the given `public_key` and a fresh random number `r` to encrypt a
