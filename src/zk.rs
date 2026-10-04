@@ -163,6 +163,10 @@ impl Encryption {
     /// original [`u64`] plaintext in a gadget that can be used in a
     /// plonk-circuit.
     ///
+    /// ## Errors
+    /// Plonk fails to prove if the decrypted point is not in the u64 map form:
+    /// an odd `x`, or a `y` of `2^254` or more.
+    ///
     /// ## Panics
     /// Panics if fails to convert scalar to LE bytes.
     ///
