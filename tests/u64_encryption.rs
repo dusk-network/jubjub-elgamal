@@ -22,7 +22,7 @@ fn encrypt_decrypt_u64() {
     // Encrypt using a fresh random value 'blinder'
     let blinder = JubJubScalar::random(&mut rng);
     let (ciphertext, shared_key) =
-        Encryption::encrypt_u64(&pk, &message, None, &blinder);
+        Encryption::encrypt_u64(&pk, &message, None, &blinder).unwrap();
 
     // Assert decryption using the secret key
     let dec_message = ciphertext.decrypt_u64(&DecryptFrom::SecretKey(sk));
@@ -159,7 +159,8 @@ mod zk {
 
         let message = 1234u64;
         let r = JubJubScalar::random(&mut rng);
-        let (ciphertext, _) = Encryption::encrypt_u64(&pk, &message, None, &r);
+        let (ciphertext, _) =
+            Encryption::encrypt_u64(&pk, &message, None, &r).unwrap();
 
         let pp = PublicParameters::setup(1 << CAPACITY, &mut rng).unwrap();
 
@@ -239,7 +240,7 @@ mod zk {
         };
 
         let r = JubJubScalar::from(1u64);
-        let (honest, _) = Encryption::encrypt_u64(&pk, &18, None, &r);
+        let (honest, _) = Encryption::encrypt_u64(&pk, &18, None, &r).unwrap();
         prove_and_verify(honest, 18).expect("honest ciphertext must verify");
 
         // `GENERATOR` is the map of 18, and `-GENERATOR` shares its `y`.

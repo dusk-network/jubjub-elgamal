@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Change `Encryption::encrypt` and `Encryption::encrypt_u64` to return a
+  `Result` that rejects a ciphertext component not of prime order [#32]
+- Change `Encryption::default` to the generator in both components [#32]
 - Adapt ZK gadgets to Plonk's torsion-free witness point API [#28]
 - Update `dusk-plonk` to v0.24 and `dusk-jubjub` to v0.16 [#28]
 - Raise the MSRV to Rust 1.96.1 [#33]
@@ -16,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reject an identity shared key in `Encryption::encrypt` and
+  `Encryption::encrypt_u64` [#32]
 - Constrain the mapped point in the `encrypt_u64` gadget to the prime-order
   subgroup [#28]
 - Constrain the mapped point in the `encrypt_u64` and `decrypt_u64` gadgets to
@@ -77,6 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add initial implementation [#1]
 
 <!-- ISSUES -->
+[#32]: https://github.com/dusk-network/jubjub-elgamal/issues/32
 [#28]: https://github.com/dusk-network/jubjub-elgamal/issues/28
 [#35]: https://github.com/dusk-network/jubjub-elgamal/issues/35
 [#33]: https://github.com/dusk-network/jubjub-elgamal/issues/33

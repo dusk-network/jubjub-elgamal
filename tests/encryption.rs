@@ -5,13 +5,46 @@
 // Copyright (c) DUSK NETWORK. All rights reserved.
 
 use dusk_bytes::Serializable;
-#[cfg(feature = "rkyv-impl")]
-use dusk_jubjub::{BlsScalar, JubJubExtended};
-use dusk_jubjub::{GENERATOR_EXTENDED, JubJubAffine, JubJubScalar};
+use dusk_jubjub::{
+    BlsScalar, GENERATOR_EXTENDED, JubJubAffine, JubJubExtended, JubJubScalar,
+};
 use ff::Field;
 use jubjub_elgamal::{DecryptFrom, Encryption};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
+
+/// A point outside the prime-order subgroup.
+fn torsion_point() -> JubJubExtended {
+    let point = JubJubExtended::from(JubJubAffine::from_raw_unchecked(
+        BlsScalar::from_raw([
+            0xd92e_6a79_2720_0d43,
+            0x7aa4_1ac4_3dae_8582,
+            0xeaaa_e086_a166_18d1,
+            0x71d4_df38_ba9e_7973,
+        ]),
+        BlsScalar::from_raw([
+            0xff0d_2068_eff4_96dd,
+            0x9106_ee90_f384_a4a1,
+            0x16a1_3035_ad4d_7266,
+            0x4958_bdb2_1966_982e,
+        ]),
+    ));
+    assert!(!bool::from(point.is_torsion_free()));
+    point
+}
+
+/// Asserts that `ciphertext` round-trips through its bytes and, with
+/// `rkyv-impl`, through its archive.
+fn assert_round_trips(ciphertext: Encryption) {
+    let bytes = ciphertext.to_bytes();
+    assert_eq!(Encryption::from_bytes(&bytes).unwrap(), ciphertext);
+
+    #[cfg(feature = "rkyv-impl")]
+    {
+        let bytes = rkyv::to_bytes::<_, 64>(&ciphertext).unwrap();
+        assert_eq!(rkyv::from_bytes::<Encryption>(&bytes).unwrap(), ciphertext);
+    }
+}
 
 #[test]
 fn encrypt_decrypt() {
@@ -25,7 +58,7 @@ fn encrypt_decrypt() {
     // Encrypt using a fresh random value 'blinder'
     let blinder = JubJubScalar::random(&mut rng);
     let (ciphertext, shared_key) =
-        Encryption::encrypt(&pk, &message, None, &blinder);
+        Encryption::encrypt(&pk, &message, None, &blinder).unwrap();
 
     // Assert decryption using the secret key
     let dec_message = ciphertext.decrypt(&DecryptFrom::SecretKey(sk));
@@ -46,10 +79,70 @@ fn encrypt_decrypt() {
     let custom_pk = custom_gen * sk;
 
     let (custom_enc, _) =
-        Encryption::encrypt(&custom_pk, &message, Some(&custom_gen), &blinder);
+        Encryption::encrypt(&custom_pk, &message, Some(&custom_gen), &blinder)
+            .unwrap();
 
     let dec_message = custom_enc.decrypt(&DecryptFrom::SecretKey(sk));
     assert_eq!(message, dec_message);
+}
+
+#[test]
+fn default_round_trips() {
+    assert_round_trips(Encryption::default());
+}
+
+#[test]
+fn encrypt_output_round_trips() {
+    let mut rng = StdRng::seed_from_u64(0xc0b);
+    let pk = GENERATOR_EXTENDED * JubJubScalar::random(&mut rng);
+    let message = GENERATOR_EXTENDED * JubJubScalar::random(&mut rng);
+    let generator = GENERATOR_EXTENDED * JubJubScalar::random(&mut rng);
+    let r = JubJubScalar::random(&mut rng);
+
+    for generator in [None, Some(&generator)] {
+        let (ciphertext, _) =
+            Encryption::encrypt(&pk, &message, generator, &r).unwrap();
+        assert_round_trips(ciphertext);
+
+        let (ciphertext, _) =
+            Encryption::encrypt_u64(&pk, &1234, generator, &r).unwrap();
+        assert_round_trips(ciphertext);
+    }
+}
+
+#[test]
+fn encrypt_rejects_components_not_of_prime_order() {
+    let mut rng = StdRng::seed_from_u64(0xc0b);
+    let pk = GENERATOR_EXTENDED * JubJubScalar::random(&mut rng);
+    let message = GENERATOR_EXTENDED * JubJubScalar::random(&mut rng);
+    let generator = GENERATOR_EXTENDED * JubJubScalar::random(&mut rng);
+    let torsion = torsion_point();
+    let identity = JubJubExtended::identity();
+    let zero = JubJubScalar::zero();
+    // a nonce of one keeps each torsion component in the ciphertext
+    let one = JubJubScalar::one();
+
+    for (pk, message, generator, r) in [
+        // identity `c1`
+        (pk, message, None, zero),
+        (pk, message, Some(generator), zero),
+        (pk, message, Some(identity), one),
+        // identity `c2`
+        (pk, -pk, None, one),
+        // identity shared key, which would leave the plaintext as `c2`
+        (identity, message, None, one),
+        // inputs outside the prime-order subgroup
+        (pk + torsion, message, None, one),
+        (pk, message + torsion, None, one),
+        (pk, message, Some(generator + torsion), one),
+    ] {
+        assert!(
+            Encryption::encrypt(&pk, &message, generator.as_ref(), &r).is_err()
+        );
+    }
+    assert!(
+        Encryption::encrypt_u64(&(pk + torsion), &1234, None, &one).is_err()
+    );
 }
 
 #[test]
@@ -85,38 +178,13 @@ fn test_bytes() {
 #[cfg(feature = "rkyv-impl")]
 #[test]
 fn rkyv_rejects_small_order_ciphertext() {
-    let torsion = JubJubExtended::from(JubJubAffine::from_raw_unchecked(
-        BlsScalar::from_raw([
-            0xd92e_6a79_2720_0d43,
-            0x7aa4_1ac4_3dae_8582,
-            0xeaaa_e086_a166_18d1,
-            0x71d4_df38_ba9e_7973,
-        ]),
-        BlsScalar::from_raw([
-            0xff0d_2068_eff4_96dd,
-            0x9106_ee90_f384_a4a1,
-            0x16a1_3035_ad4d_7266,
-            0x4958_bdb2_1966_982e,
-        ]),
-    ));
-    assert!(!bool::from(torsion.is_torsion_free()));
+    let valid_point = JubJubAffine::from(GENERATOR_EXTENDED).to_bytes();
+    let torsion = JubJubAffine::from(torsion_point()).to_bytes();
 
-    let (bad_c1, _) = Encryption::encrypt(
-        &GENERATOR_EXTENDED,
-        &GENERATOR_EXTENDED,
-        Some(&torsion),
-        &JubJubScalar::one(),
-    );
-    let (bad_c2, _) = Encryption::encrypt(
-        &(GENERATOR_EXTENDED * JubJubScalar::zero()),
-        &torsion,
-        None,
-        &JubJubScalar::one(),
-    );
-
-    for ciphertext in [bad_c1, bad_c2] {
-        let bytes = rkyv::to_bytes::<_, 64>(&ciphertext).unwrap();
-
+    for bytes in [
+        [torsion, valid_point].concat(),
+        [valid_point, torsion].concat(),
+    ] {
         assert!(rkyv::check_archived_root::<Encryption>(&bytes).is_err());
         assert!(rkyv::from_bytes::<Encryption>(&bytes).is_err());
     }
@@ -289,7 +357,8 @@ mod zk {
 
         let message = GENERATOR_EXTENDED * JubJubScalar::from(1234u64);
         let r = JubJubScalar::random(&mut rng);
-        let (ciphertext, _) = Encryption::encrypt(&pk, &message, None, &r);
+        let (ciphertext, _) =
+            Encryption::encrypt(&pk, &message, None, &r).unwrap();
 
         let pp = PublicParameters::setup(1 << CAPACITY, &mut rng).unwrap();
 
@@ -395,7 +464,8 @@ mod zk {
 
         let message = GENERATOR_EXTENDED * JubJubScalar::from(1234u64);
         let r = JubJubScalar::random(&mut rng);
-        let (ciphertext, _) = Encryption::encrypt(&pk, &message, None, &r);
+        let (ciphertext, _) =
+            Encryption::encrypt(&pk, &message, None, &r).unwrap();
 
         let pp = PublicParameters::setup(1 << CAPACITY, &mut rng).unwrap();
 
