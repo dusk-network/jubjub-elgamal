@@ -492,6 +492,125 @@ mod zk {
             .expect("failed to verify proof");
     }
 
+    fn custom_generator() -> JubJubExtended {
+        GENERATOR_EXTENDED * JubJubScalar::from(1234u64)
+    }
+
+    /// Encrypts with the gadget `GADGET` picks: `Encryption::encrypt` with a
+    /// custom (`0`) or the default (`1`) generator, or `encrypt_unchecked`
+    /// (`2`). The nonce is a raw BLS scalar, so tests can make it
+    /// non-canonical.
+    #[derive(Default)]
+    pub struct NonceCircuit<const GADGET: u8> {
+        public_key: JubJubAffine,
+        plaintext: JubJubAffine,
+        r: BlsScalar,
+        ciphertext: (JubJubAffine, JubJubAffine),
+    }
+
+    impl<const GADGET: u8> Circuit for NonceCircuit<GADGET> {
+        fn circuit(&self, composer: &mut Composer) -> Result<(), Error> {
+            let public_key = append_torsion_free(composer, self.public_key)?;
+            let plaintext = append_torsion_free(composer, self.plaintext)?;
+            let r = composer.append_witness(self.r);
+
+            let (c1, c2) = match GADGET {
+                0 => {
+                    let generator =
+                        composer.append_constant_point(custom_generator())?;
+                    let (enc, _) = EncryptionZK::encrypt(
+                        composer,
+                        public_key,
+                        plaintext,
+                        Some(generator),
+                        r,
+                    )?;
+                    (*enc.c1(), *enc.c2())
+                }
+                1 => {
+                    let (enc, _) = EncryptionZK::encrypt(
+                        composer, public_key, plaintext, None, r,
+                    )?;
+                    (*enc.c1(), *enc.c2())
+                }
+                _ => zk::encrypt_unchecked(composer, public_key, plaintext, r)?,
+            };
+            composer.assert_equal_public_point(c1.into(), self.ciphertext.0)?;
+            composer.assert_equal_public_point(c2.into(), self.ciphertext.1)?;
+
+            Ok(())
+        }
+    }
+
+    fn assert_rejects_non_canonical_nonce<const GADGET: u8>(
+        pp: &PublicParameters,
+        rng: &mut StdRng,
+    ) {
+        let generator = (GADGET == 0).then(custom_generator);
+        let public_key = GENERATOR_EXTENDED * JubJubScalar::random(&mut *rng);
+        let plaintext = GENERATOR_EXTENDED * JubJubScalar::random(&mut *rng);
+
+        let (prover, verifier) =
+            Compiler::compile::<NonceCircuit<GADGET>>(pp, LABEL)
+                .expect("failed to compile circuit");
+
+        // The ciphertext of the scalar `s`
+        let ciphertext = |s: &JubJubScalar| {
+            let (enc, _) = Encryption::encrypt(
+                &public_key,
+                &plaintext,
+                generator.as_ref(),
+                s,
+            )
+            .unwrap();
+            (*enc.c1(), *enc.c2())
+        };
+
+        // Proves with the nonce witness `r` against the ciphertext `(c1, c2)`
+        let mut prove =
+            |r: BlsScalar, (c1, c2): (JubJubExtended, JubJubExtended)| {
+                let circuit = NonceCircuit::<GADGET> {
+                    public_key: public_key.into(),
+                    plaintext: plaintext.into(),
+                    r,
+                    ciphertext: (c1.into(), c2.into()),
+                };
+                prover
+                    .prove(&mut *rng, &circuit)
+                    .and_then(|(proof, pi)| verifier.verify(&proof, &pi))
+            };
+
+        let s = JubJubScalar::from(42u64);
+        prove(s.into(), ciphertext(&s)).expect("canonical nonce must verify");
+
+        // `s` plus the subgroup order stays below `2^252`
+        let order = BlsScalar::from(-JubJubScalar::one()) + BlsScalar::one();
+        assert!(prove(BlsScalar::from(s) + order, ciphertext(&s)).is_err());
+
+        // The boundary: the largest canonical nonce verifies, while the
+        // subgroup order, which encrypts like a zero nonce, does not
+        let max = -JubJubScalar::one();
+        prove(max.into(), ciphertext(&max))
+            .expect("largest canonical nonce must verify");
+        assert!(prove(order, (JubJubExtended::identity(), plaintext)).is_err());
+
+        // `-1` is below the largest canonical scalar modulo the BLS order
+        let mut wide = [0u8; 64];
+        wide[..32].copy_from_slice(&(-BlsScalar::one()).to_bytes());
+        let s = JubJubScalar::from_bytes_wide(&wide);
+        assert!(prove(-BlsScalar::one(), ciphertext(&s)).is_err());
+    }
+
+    #[test]
+    fn encryption_rejects_non_canonical_nonce() {
+        let mut rng = StdRng::seed_from_u64(0xc0b);
+        let pp = PublicParameters::setup(1 << CAPACITY, &mut rng).unwrap();
+
+        assert_rejects_non_canonical_nonce::<0>(&pp, &mut rng);
+        assert_rejects_non_canonical_nonce::<1>(&pp, &mut rng);
+        assert_rejects_non_canonical_nonce::<2>(&pp, &mut rng);
+    }
+
     #[test]
     fn checked_encryption_rejects_small_order_inputs() {
         let mut rng = StdRng::seed_from_u64(0xc0b);

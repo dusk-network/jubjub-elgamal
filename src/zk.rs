@@ -64,9 +64,10 @@ impl Encryption {
     /// Returns the ciphertext plus the `shared_key`.
     ///
     /// ## Errors
-    /// This function will error if `r` is not a valid jubjub-scalar.
-    /// It will also make Plonk fail to prove if the [`Encryption`] cannot
-    /// be decrypted.
+    /// This function will error if `r` is not a valid jubjub-scalar and no
+    /// `generator` is given. With a `generator`, such an `r` makes Plonk fail
+    /// to prove. Plonk also fails to prove if the [`Encryption`] cannot be
+    /// decrypted.
     pub fn encrypt(
         composer: &mut Composer,
         public_key: TorsionFreeWitnessPoint,
@@ -75,7 +76,12 @@ impl Encryption {
         r: Witness,
     ) -> Result<(Self, TorsionFreeWitnessPoint), Error> {
         let ciphertext_1 = match generator {
-            Some(generator) => composer.component_mul_point(r, generator),
+            Some(generator) => {
+                // `component_mul_generator` constrains its scalar to be
+                // canonical, `component_mul_point` does not
+                assert_canonical_scalar(composer, r);
+                composer.component_mul_point(r, generator)
+            }
             _ => composer.component_mul_generator(r, GENERATOR)?,
         };
 
@@ -107,9 +113,10 @@ impl Encryption {
     /// Panics if fails to convert scalar to LE bytes.
     ///
     /// ## Errors
-    /// This function will error if `r` is not a valid jubjub-scalar.
-    /// It will also make Plonk fail to prove if the [`Encryption`] cannot
-    /// be decrypted.
+    /// This function will error if `r` is not a valid jubjub-scalar and no
+    /// `generator` is given. With a `generator`, such an `r` makes Plonk fail
+    /// to prove. Plonk also fails to prove if the [`Encryption`] cannot be
+    /// decrypted.
     pub fn encrypt_u64(
         composer: &mut Composer,
         public_key: TorsionFreeWitnessPoint,
@@ -218,6 +225,24 @@ const SHIFT: BlsScalar = BlsScalar::from_raw([
     0x95ae_b36c_acca_82b5,
     0x73ed_a752_b5af_d5f4,
 ]);
+
+/// Constrains `scalar` to a canonical JubJub scalar, below the order `r` of the
+/// prime-order subgroup.
+///
+/// Bounds both `scalar` and `(r - 1) - scalar` to 252 bits. With `scalar`
+/// below `2^252`, `(r - 1) - scalar` fits in 252 bits exactly when
+/// `scalar < r`, and wraps above `2^254` otherwise.
+fn assert_canonical_scalar(composer: &mut Composer, scalar: Witness) {
+    composer.component_range_bits::<252>(scalar);
+
+    let distance = composer.gate_add(
+        Constraint::new()
+            .left(-BlsScalar::one())
+            .a(scalar)
+            .constant(BlsScalar::from(-JubJubScalar::one())),
+    );
+    composer.component_range_bits::<252>(distance);
+}
 
 /// Constrains `point` to have an even `x` and a canonical `y` with `value` as
 /// its low 64 bits: `y = value + 2^64·k` with `value < 2^64` and `k < 2^190`.
