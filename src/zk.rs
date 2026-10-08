@@ -103,8 +103,11 @@ impl Encryption {
 
     /// Uses the given `public_key` and a fresh random number `r` to encrypt a
     /// unsigned 64-bit plaintext [`Witness`] in a gadget that can be used in a
-    /// plonk-circuit. It does it by computing a curve mapping [`WitnessPoint`],
-    /// which the circuit enforces to match the original plaintext.
+    /// plonk-circuit. It does it by computing a curve mapping
+    /// [`TorsionFreeWitnessPoint`], which the circuit enforces to carry the
+    /// original plaintext: a point of the prime-order subgroup with an even
+    /// `x` and the plaintext as the low 64 bits of its `y`. Any such point
+    /// passes, not only the one [`JubJubExtended::map_to_point`] returns.
     ///
     /// ## Return
     /// Returns the ciphertext plus the `shared_key`.
@@ -137,7 +140,7 @@ impl Encryption {
             composer.assert_torsion_free_point(mapped_plaintext);
 
         // we enforce the mapped point to match the plaintext
-        assert_u64_map(composer, mapped_plaintext.into(), plaintext);
+        assert_u64_map(composer, mapped_plaintext, plaintext);
 
         // we return the encryption of the mapped plaintext
         let (ciphertext, shared_key) = Self::encrypt(
@@ -181,7 +184,9 @@ impl Encryption {
     ///
     /// ## Errors
     /// Plonk fails to prove if the decrypted point is not in the u64 map form:
-    /// an odd `x`, or a `y` of `2^254` or more.
+    /// an odd `x`, or a `y` of `2^254` or more. Any point of that form passes,
+    /// not only the one [`JubJubExtended::map_to_point`] returns, and decrypts
+    /// to the low 64 bits of its `y`.
     ///
     /// ## Panics
     /// Panics if fails to convert scalar to LE bytes.
@@ -204,7 +209,7 @@ impl Encryption {
         let dec_plaintext = composer.append_witness(dec_plaintext_u64);
 
         // we enforce the unmapped plaintext to match the decryption output
-        assert_u64_map(composer, mapped_dec_plaintext.into(), dec_plaintext);
+        assert_u64_map(composer, mapped_dec_plaintext, dec_plaintext);
 
         dec_plaintext
     }
@@ -247,13 +252,13 @@ fn assert_canonical_scalar(composer: &mut Composer, scalar: Witness) {
 /// Constrains `point` to have an even `x` and a canonical `y` with `value` as
 /// its low 64 bits: `y = value + 2^64·k` with `value < 2^64` and `k < 2^190`.
 ///
-/// This does not pin `point` to the output of [`JubJubExtended::map_to_point`]:
-/// `k` is not constrained to be minimal and `point` is not checked to be in
-/// the prime-order subgroup, see
-/// <https://github.com/dusk-network/jubjub-elgamal/issues/37>.
+/// Every subgroup point of that form passes, the identity included as a map of
+/// `1`, not only the first one [`JubJubExtended::map_to_point`] finds: pinning
+/// its `k` would take a proof for each `y` the search skips, 15 on average and
+/// hundreds at worst. `value` stays bound as the low 64 bits of `y`.
 fn assert_u64_map(
     composer: &mut Composer,
-    point: WitnessPoint,
+    point: TorsionFreeWitnessPoint,
     value: Witness,
 ) {
     // k = (y - value) / 2^64
@@ -341,10 +346,52 @@ mod tests {
     impl Circuit for MapCircuit {
         fn circuit(&self, composer: &mut Composer) -> Result<(), Error> {
             let point = composer.append_point(self.0)?;
+            let point = composer.assert_torsion_free_point(point);
             let value = composer.append_witness(self.1);
             assert_u64_map(composer, point, value);
             Ok(())
         }
+    }
+
+    /// The first point above `point` with an even `x` and the same low 64
+    /// bits of `y`, that satisfies `pred`.
+    fn next_map_form(
+        point: JubJubAffine,
+        pred: fn(&JubJubExtended) -> bool,
+    ) -> JubJubAffine {
+        let mut y = point.get_v();
+        loop {
+            y += BlsScalar::pow_of_2(64);
+            // this decoder only checks the curve, and picks the even `x`
+            let point = JubJubAffine::from_bytes(y.to_bytes());
+            if let Some(point) = Option::<JubJubAffine>::from(point)
+                && pred(&point.into())
+            {
+                return point;
+            }
+        }
+    }
+
+    #[test]
+    fn u64_map_accepts_any_k() {
+        let mut rng = StdRng::seed_from_u64(0xc0b);
+        let pp = PublicParameters::setup(1 << 10, &mut rng).unwrap();
+        let (prover, verifier) =
+            Compiler::compile::<MapCircuit>(&pp, b"u64-map").unwrap();
+        let mut prove = |point, value: u64| {
+            prover
+                .prove(&mut rng, &MapCircuit(point, BlsScalar::from(value)))
+                .and_then(|(proof, pi)| verifier.verify(&proof, &pi))
+        };
+
+        let map = JubJubAffine::from(JubJubExtended::map_to_point(&18));
+        prove(map, 18).expect("map of 18 must verify");
+
+        // `k` is not pinned: the next subgroup point of the form passes, and
+        // so does the identity for `1`
+        let next = next_map_form(map, |p| p.is_prime_order().into());
+        prove(next, 18).expect("larger `k` must verify");
+        prove(JubJubAffine::identity(), 1).expect("identity must verify");
     }
 
     #[test]

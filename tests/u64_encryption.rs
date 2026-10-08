@@ -272,4 +272,46 @@ mod zk {
             assert!(prove_and_verify(forged, plaintext).is_err());
         }
     }
+
+    #[test]
+    fn decrypt_u64_accepts_map_at_any_k() {
+        let mut rng = StdRng::seed_from_u64(0xc0b);
+        let pp = PublicParameters::setup(1 << CAPACITY, &mut rng).unwrap();
+        let (prover, verifier) =
+            Compiler::compile::<DecryptCircuit>(&pp, LABEL)
+                .expect("failed to compile circuit");
+
+        // The next point after the map of 18 with an even `x`, a `y` with the
+        // same low 64 bits, and prime order.
+        let map = JubJubAffine::from(JubJubExtended::map_to_point(&18));
+        let mut y = map.get_v();
+        let point = loop {
+            y += BlsScalar::pow_of_2(64);
+            let point = JubJubAffine::from_bytes(y.to_bytes());
+            if let Some(point) = Option::<JubJubAffine>::from(point)
+                && bool::from(point.is_prime_order())
+            {
+                break JubJubExtended::from(point);
+            }
+        };
+
+        // Ciphertext `(G, point + 2G)` decrypts to `point` under `pk = 2G`.
+        let secret_key = JubJubScalar::from(2u64);
+        let pk = GENERATOR_EXTENDED * secret_key;
+        let ciphertext = Encryption::new(GENERATOR_EXTENDED, point + pk)
+            .expect("prime-order ciphertext");
+        let plaintext =
+            ciphertext.decrypt_u64(&DecryptFrom::SecretKey(secret_key));
+        assert_eq!(plaintext, 18);
+
+        let circuit = DecryptCircuit {
+            secret_key,
+            plaintext,
+            ciphertext,
+        };
+        prover
+            .prove(&mut rng, &circuit)
+            .and_then(|(proof, pi)| verifier.verify(&proof, &pi))
+            .expect("any `k` must verify");
+    }
 }
