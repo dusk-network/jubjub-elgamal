@@ -56,7 +56,15 @@ mod zk {
     use rand::rngs::StdRng;
 
     static LABEL: &[u8; 12] = b"dusk-network";
-    const CAPACITY: usize = 14; // capacity required for the setup
+    const CAPACITY: usize = 15; // capacity required for the setup
+
+    fn append_torsion_free(
+        composer: &mut Composer,
+        point: impl Into<JubJubExtended>,
+    ) -> Result<TorsionFreeWitnessPoint, Error> {
+        let point = composer.append_point(point)?;
+        Ok(composer.assert_torsion_free_point(point))
+    }
 
     #[derive(Default, Debug)]
     pub struct ElGamalCircuit {
@@ -88,7 +96,7 @@ mod zk {
     impl Circuit for ElGamalCircuit {
         fn circuit(&self, composer: &mut Composer) -> Result<(), Error> {
             // import inputs
-            let public_key = composer.append_point(self.public_key);
+            let public_key = append_torsion_free(composer, self.public_key)?;
             let secret_key = composer.append_witness(self.secret_key);
             let plaintext = composer.append_witness(self.plaintext);
             let r = composer.append_witness(self.r);
@@ -100,13 +108,13 @@ mod zk {
 
             // assert that the ciphertext is as expected
             composer.assert_equal_public_point(
-                *ciphertext.c1(),
-                self.expected_ciphertext.c1(),
-            );
+                (*ciphertext.c1()).into(),
+                *self.expected_ciphertext.c1(),
+            )?;
             composer.assert_equal_public_point(
-                *ciphertext.c2(),
-                self.expected_ciphertext.c2(),
-            );
+                (*ciphertext.c2()).into(),
+                *self.expected_ciphertext.c2(),
+            )?;
 
             // decrypt with sk
             let dec_plaintext = ciphertext
@@ -121,8 +129,9 @@ mod zk {
             composer.assert_equal(dec_plaintext, plaintext);
 
             // encrypt / decrypt plaintext using custom generator
-            let custom_gen = composer
-                .append_point(GENERATOR_EXTENDED * JubJubScalar::from(1234u64));
+            let custom_gen = composer.append_constant_point(
+                GENERATOR_EXTENDED * JubJubScalar::from(1234u64),
+            )?;
             let custom_pk =
                 composer.component_mul_point(secret_key, custom_gen);
             let (custom_enc, _) = EncryptionZK::encrypt_u64(
@@ -183,12 +192,14 @@ mod zk {
             let public_key =
                 composer.component_mul_generator(secret_key, GENERATOR)?;
             composer.assert_equal_public_point(
-                public_key,
+                public_key.into(),
                 GENERATOR * self.secret_key,
-            );
+            )?;
 
-            let c1 = composer.append_public_point(*self.ciphertext.c1());
-            let c2 = composer.append_public_point(*self.ciphertext.c2());
+            let c1 = composer.append_public_point(*self.ciphertext.c1())?;
+            let c2 = composer.append_public_point(*self.ciphertext.c2())?;
+            let c1 = composer.assert_torsion_free_point(c1);
+            let c2 = composer.assert_torsion_free_point(c2);
             let plaintext = EncryptionZK::new(c1, c2)
                 .decrypt_u64(composer, &DecryptFromZK::SecretKey(secret_key));
             let expected = composer.append_public(self.plaintext);
