@@ -36,10 +36,25 @@ pub enum DecryptFrom {
 }
 
 /// `ElGamal` encryption of a [`JubJubExtended`] plaintext
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Both ciphertext components are points of prime order. Every constructor
+/// upholds this, so each value round-trips through its byte and archive
+/// representations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Encryption {
     ciphertext_1: JubJubExtended,
     ciphertext_2: JubJubExtended,
+}
+
+/// Uses the generator for both components, a placeholder that passes the
+/// checks of [`Encryption::new`].
+impl Default for Encryption {
+    fn default() -> Self {
+        Self {
+            ciphertext_1: GENERATOR_EXTENDED,
+            ciphertext_2: GENERATOR_EXTENDED,
+        }
+    }
 }
 
 /// Archived canonical byte representation of an [`Encryption`].
@@ -154,28 +169,50 @@ impl Encryption {
     ///
     /// ## Return
     /// Returns an [`Encryption`] plus the computed shared key.
-    #[must_use]
+    ///
+    /// ## Errors
+    /// Returns [`DuskBytesError::InvalidData`] if a ciphertext component is
+    /// not of prime order, as [`Encryption::new`] would, for example for a
+    /// zero `r`, or if the shared key is the identity, as for an identity
+    /// `public_key`. The check is on the components and the shared key, so
+    /// inputs outside the prime-order subgroup are not always rejected.
     pub fn encrypt(
         public_key: &JubJubExtended,
         plaintext: &JubJubExtended,
         generator: Option<&JubJubExtended>,
         r: &JubJubScalar,
-    ) -> (Self, JubJubExtended) {
-        let ciphertext_1 = match generator {
-            Some(generator) => generator * r,
-            _ => GENERATOR_EXTENDED * r,
+    ) -> Result<(Self, JubJubExtended), DuskBytesError> {
+        // A multiple of the default generator is in the prime-order subgroup,
+        // so it only has to differ from the identity.
+        let (ciphertext_1, c1_prime_order) = match generator {
+            Some(generator) => {
+                let c1 = generator * r;
+                (c1, c1.is_prime_order())
+            }
+            _ => {
+                let c1 = GENERATOR_EXTENDED * r;
+                (c1, !c1.is_identity())
+            }
         };
 
         let shared_key = public_key * r;
         let ciphertext_2 = plaintext + shared_key;
 
-        (
+        if !bool::from(
+            c1_prime_order
+                & ciphertext_2.is_prime_order()
+                & !shared_key.is_identity(),
+        ) {
+            return Err(DuskBytesError::InvalidData);
+        }
+
+        Ok((
             Self {
                 ciphertext_1,
                 ciphertext_2,
             },
             shared_key,
-        )
+        ))
     }
 
     /// Uses the given `public_key` and a fresh random number `r` to encrypt a
@@ -183,13 +220,16 @@ impl Encryption {
     ///
     /// ## Return
     /// Returns an [`Encryption`] plus the computed shared key.
-    #[must_use]
+    ///
+    /// ## Errors
+    /// Returns [`DuskBytesError::InvalidData`] under the conditions of
+    /// [`Encryption::encrypt`].
     pub fn encrypt_u64(
         public_key: &JubJubExtended,
         plaintext: &u64,
         generator: Option<&JubJubExtended>,
         r: &JubJubScalar,
-    ) -> (Encryption, JubJubExtended) {
+    ) -> Result<(Encryption, JubJubExtended), DuskBytesError> {
         let mapped_plaintext = JubJubExtended::map_to_point(plaintext);
         Self::encrypt(public_key, &mapped_plaintext, generator, r)
     }

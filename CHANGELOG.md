@@ -7,13 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-08
+
 ### Changed
 
+- Document that the `encrypt_u64` and `decrypt_u64` gadgets accept any point of
+  the prime-order subgroup in the u64 map form, not only the one
+  `map_to_point` returns [#37]
+- Change `Encryption::encrypt` and `Encryption::encrypt_u64` to return a
+  `Result` that rejects a ciphertext component not of prime order [#32]
+- Change `Encryption::default` to the generator in both components [#32]
+- Adapt ZK gadgets to Plonk's torsion-free witness point API [#28]
+- Update `dusk-plonk` to v0.24 and `dusk-jubjub` to v0.16 [#28]
 - Raise the MSRV to Rust 1.96.1 [#33]
 - Archive `Encryption` using its validated canonical byte representation [#31]
 
 ### Fixed
 
+- Constrain the nonce of the `encrypt` and `encrypt_u64` gadgets to a canonical
+  JubJub scalar when given a custom generator [#38]
+- Reject an identity shared key in `Encryption::encrypt` and
+  `Encryption::encrypt_u64` [#32]
+- Constrain the mapped point in the `encrypt_u64` gadget to the prime-order
+  subgroup [#28] [#37]
 - Constrain the mapped point in the `encrypt_u64` and `decrypt_u64` gadgets to
   a canonical `y` with the plaintext as its low 64 bits, and an even `x` [#35]
 
@@ -73,6 +89,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add initial implementation [#1]
 
 <!-- ISSUES -->
+[#38]: https://github.com/dusk-network/jubjub-elgamal/issues/38
+[#37]: https://github.com/dusk-network/jubjub-elgamal/issues/37
+[#32]: https://github.com/dusk-network/jubjub-elgamal/issues/32
+[#28]: https://github.com/dusk-network/jubjub-elgamal/issues/28
 [#35]: https://github.com/dusk-network/jubjub-elgamal/issues/35
 [#33]: https://github.com/dusk-network/jubjub-elgamal/issues/33
 [#31]: https://github.com/dusk-network/jubjub-elgamal/issues/31
@@ -85,9 +105,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#1]: https://github.com/dusk-network/jubjub-elgamal/issues/1
 
 <!-- VERSIONS -->
-[Unreleased]: https://github.com/dusk-network/jubjub-elgamal/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/dusk-network/jubjub-elgamal/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/dusk-network/jubjub-elgamal/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/dusk-network/jubjub-elgamal/compare/v0.4.3...v0.5.0
-[0.4.3]: https://github.com/dusk-network/jubjub-elgamal/compare/v0.4.0...v0.4.2
+[0.4.3]: https://github.com/dusk-network/jubjub-elgamal/compare/v0.4.0...v0.4.3
 [0.4.0]: https://github.com/dusk-network/jubjub-elgamal/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/dusk-network/jubjub-elgamal/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/dusk-network/jubjub-elgamal/compare/v0.1.0...v0.2.0

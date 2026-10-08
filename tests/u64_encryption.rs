@@ -22,7 +22,7 @@ fn encrypt_decrypt_u64() {
     // Encrypt using a fresh random value 'blinder'
     let blinder = JubJubScalar::random(&mut rng);
     let (ciphertext, shared_key) =
-        Encryption::encrypt_u64(&pk, &message, None, &blinder);
+        Encryption::encrypt_u64(&pk, &message, None, &blinder).unwrap();
 
     // Assert decryption using the secret key
     let dec_message = ciphertext.decrypt_u64(&DecryptFrom::SecretKey(sk));
@@ -56,7 +56,15 @@ mod zk {
     use rand::rngs::StdRng;
 
     static LABEL: &[u8; 12] = b"dusk-network";
-    const CAPACITY: usize = 14; // capacity required for the setup
+    const CAPACITY: usize = 15; // capacity required for the setup
+
+    fn append_torsion_free(
+        composer: &mut Composer,
+        point: impl Into<JubJubExtended>,
+    ) -> Result<TorsionFreeWitnessPoint, Error> {
+        let point = composer.append_point(point)?;
+        Ok(composer.assert_torsion_free_point(point))
+    }
 
     #[derive(Default, Debug)]
     pub struct ElGamalCircuit {
@@ -88,7 +96,7 @@ mod zk {
     impl Circuit for ElGamalCircuit {
         fn circuit(&self, composer: &mut Composer) -> Result<(), Error> {
             // import inputs
-            let public_key = composer.append_point(self.public_key);
+            let public_key = append_torsion_free(composer, self.public_key)?;
             let secret_key = composer.append_witness(self.secret_key);
             let plaintext = composer.append_witness(self.plaintext);
             let r = composer.append_witness(self.r);
@@ -100,13 +108,13 @@ mod zk {
 
             // assert that the ciphertext is as expected
             composer.assert_equal_public_point(
-                *ciphertext.c1(),
-                self.expected_ciphertext.c1(),
-            );
+                (*ciphertext.c1()).into(),
+                *self.expected_ciphertext.c1(),
+            )?;
             composer.assert_equal_public_point(
-                *ciphertext.c2(),
-                self.expected_ciphertext.c2(),
-            );
+                (*ciphertext.c2()).into(),
+                *self.expected_ciphertext.c2(),
+            )?;
 
             // decrypt with sk
             let dec_plaintext = ciphertext
@@ -121,8 +129,9 @@ mod zk {
             composer.assert_equal(dec_plaintext, plaintext);
 
             // encrypt / decrypt plaintext using custom generator
-            let custom_gen = composer
-                .append_point(GENERATOR_EXTENDED * JubJubScalar::from(1234u64));
+            let custom_gen = composer.append_constant_point(
+                GENERATOR_EXTENDED * JubJubScalar::from(1234u64),
+            )?;
             let custom_pk =
                 composer.component_mul_point(secret_key, custom_gen);
             let (custom_enc, _) = EncryptionZK::encrypt_u64(
@@ -150,7 +159,8 @@ mod zk {
 
         let message = 1234u64;
         let r = JubJubScalar::random(&mut rng);
-        let (ciphertext, _) = Encryption::encrypt_u64(&pk, &message, None, &r);
+        let (ciphertext, _) =
+            Encryption::encrypt_u64(&pk, &message, None, &r).unwrap();
 
         let pp = PublicParameters::setup(1 << CAPACITY, &mut rng).unwrap();
 
@@ -183,12 +193,14 @@ mod zk {
             let public_key =
                 composer.component_mul_generator(secret_key, GENERATOR)?;
             composer.assert_equal_public_point(
-                public_key,
+                public_key.into(),
                 GENERATOR * self.secret_key,
-            );
+            )?;
 
-            let c1 = composer.append_public_point(*self.ciphertext.c1());
-            let c2 = composer.append_public_point(*self.ciphertext.c2());
+            let c1 = composer.append_public_point(*self.ciphertext.c1())?;
+            let c2 = composer.append_public_point(*self.ciphertext.c2())?;
+            let c1 = composer.assert_torsion_free_point(c1);
+            let c2 = composer.assert_torsion_free_point(c2);
             let plaintext = EncryptionZK::new(c1, c2)
                 .decrypt_u64(composer, &DecryptFromZK::SecretKey(secret_key));
             let expected = composer.append_public(self.plaintext);
@@ -228,7 +240,7 @@ mod zk {
         };
 
         let r = JubJubScalar::from(1u64);
-        let (honest, _) = Encryption::encrypt_u64(&pk, &18, None, &r);
+        let (honest, _) = Encryption::encrypt_u64(&pk, &18, None, &r).unwrap();
         prove_and_verify(honest, 18).expect("honest ciphertext must verify");
 
         // `GENERATOR` is the map of 18, and `-GENERATOR` shares its `y`.
@@ -259,5 +271,47 @@ mod zk {
             let (forged, plaintext) = forge(point);
             assert!(prove_and_verify(forged, plaintext).is_err());
         }
+    }
+
+    #[test]
+    fn decrypt_u64_accepts_map_at_any_k() {
+        let mut rng = StdRng::seed_from_u64(0xc0b);
+        let pp = PublicParameters::setup(1 << CAPACITY, &mut rng).unwrap();
+        let (prover, verifier) =
+            Compiler::compile::<DecryptCircuit>(&pp, LABEL)
+                .expect("failed to compile circuit");
+
+        // The next point after the map of 18 with an even `x`, a `y` with the
+        // same low 64 bits, and prime order.
+        let map = JubJubAffine::from(JubJubExtended::map_to_point(&18));
+        let mut y = map.get_v();
+        let point = loop {
+            y += BlsScalar::pow_of_2(64);
+            let point = JubJubAffine::from_bytes(y.to_bytes());
+            if let Some(point) = Option::<JubJubAffine>::from(point)
+                && bool::from(point.is_prime_order())
+            {
+                break JubJubExtended::from(point);
+            }
+        };
+
+        // Ciphertext `(G, point + 2G)` decrypts to `point` under `pk = 2G`.
+        let secret_key = JubJubScalar::from(2u64);
+        let pk = GENERATOR_EXTENDED * secret_key;
+        let ciphertext = Encryption::new(GENERATOR_EXTENDED, point + pk)
+            .expect("prime-order ciphertext");
+        let plaintext =
+            ciphertext.decrypt_u64(&DecryptFrom::SecretKey(secret_key));
+        assert_eq!(plaintext, 18);
+
+        let circuit = DecryptCircuit {
+            secret_key,
+            plaintext,
+            ciphertext,
+        };
+        prover
+            .prove(&mut rng, &circuit)
+            .and_then(|(proof, pi)| verifier.verify(&proof, &pi))
+            .expect("any `k` must verify");
     }
 }
