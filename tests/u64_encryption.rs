@@ -181,6 +181,68 @@ mod zk {
     }
 
     #[derive(Default, Debug)]
+    pub struct EncryptCircuit {
+        public_key: JubJubAffine,
+        plaintext: BlsScalar,
+        r: JubJubScalar,
+        ciphertext: Encryption,
+    }
+
+    impl Circuit for EncryptCircuit {
+        fn circuit(&self, composer: &mut Composer) -> Result<(), Error> {
+            let public_key = append_torsion_free(composer, self.public_key)?;
+            let plaintext = composer.append_witness(self.plaintext);
+            let r = composer.append_witness(self.r);
+
+            let (ciphertext, _) = EncryptionZK::encrypt_u64(
+                composer, public_key, plaintext, None, r,
+            )?;
+            composer.assert_equal_public_point(
+                (*ciphertext.c1()).into(),
+                *self.ciphertext.c1(),
+            )?;
+            composer.assert_equal_public_point(
+                (*ciphertext.c2()).into(),
+                *self.ciphertext.c2(),
+            )?;
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn encrypt_u64_rejects_plaintext_above_u64() {
+        let mut rng = StdRng::seed_from_u64(0xc0b);
+        let pp = PublicParameters::setup(1 << CAPACITY, &mut rng).unwrap();
+        let (prover, verifier) =
+            Compiler::compile::<EncryptCircuit>(&pp, LABEL)
+                .expect("failed to compile circuit");
+
+        let public_key = GENERATOR_EXTENDED * JubJubScalar::from(2u64);
+        let r = JubJubScalar::from(3u64);
+        let (ciphertext, _) =
+            Encryption::encrypt_u64(&public_key, &18, None, &r).unwrap();
+        let mut prove_and_verify = |plaintext| {
+            let circuit = EncryptCircuit {
+                public_key: public_key.into(),
+                plaintext,
+                r,
+                ciphertext,
+            };
+            prover
+                .prove(&mut rng, &circuit)
+                .and_then(|(proof, pi)| verifier.verify(&proof, &pi))
+        };
+
+        prove_and_verify(BlsScalar::from(18))
+            .expect("the plaintext of the ciphertext must verify");
+        // The gadget maps the low 64 bits of the witness, which are 18 here,
+        // so only the constraints on the plaintext can reject it.
+        let above = BlsScalar::from(18) + BlsScalar::pow_of_2(64);
+        assert!(prove_and_verify(above).is_err());
+    }
+
+    #[derive(Default, Debug)]
     pub struct DecryptCircuit {
         secret_key: JubJubScalar,
         plaintext: u64,
