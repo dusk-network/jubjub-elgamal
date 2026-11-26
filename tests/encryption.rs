@@ -146,6 +146,64 @@ fn encrypt_rejects_components_not_of_prime_order() {
 }
 
 #[test]
+fn rejects_off_curve_points() {
+    let mut rng = StdRng::seed_from_u64(0xc0b);
+    let pk = GENERATOR_EXTENDED * JubJubScalar::random(&mut rng);
+    let message = GENERATOR_EXTENDED * JubJubScalar::random(&mut rng);
+    let one = JubJubScalar::one();
+
+    let off_curve = [
+        JubJubExtended::from(JubJubAffine::from_raw_unchecked(
+            BlsScalar::zero(),
+            BlsScalar::zero(),
+        )),
+        JubJubExtended::from(JubJubAffine::from_raw_unchecked(
+            BlsScalar::one(),
+            BlsScalar::one(),
+        )),
+    ];
+
+    for bad in off_curve {
+        assert!(!bool::from(bad.is_on_curve()));
+        assert!(Encryption::new(bad, pk).is_err());
+        assert!(Encryption::new(pk, bad).is_err());
+        assert!(Encryption::encrypt(&bad, &message, None, &one).is_err());
+        assert!(Encryption::encrypt(&pk, &bad, None, &one).is_err());
+        assert!(Encryption::encrypt(&pk, &message, Some(&bad), &one).is_err());
+        assert!(Encryption::encrypt_u64(&bad, &1234, None, &one).is_err());
+        assert!(Encryption::encrypt_u64(&pk, &1234, Some(&bad), &one).is_err());
+    }
+}
+
+#[cfg(feature = "rkyv-impl")]
+#[test]
+fn rejects_zero_z_projective_points() {
+    let mut rng = StdRng::seed_from_u64(0xc0b);
+    let pk = GENERATOR_EXTENDED * JubJubScalar::random(&mut rng);
+    let message = GENERATOR_EXTENDED * JubJubScalar::random(&mut rng);
+    let one = JubJubScalar::one();
+
+    let zero_all: JubJubExtended =
+        rkyv::from_bytes(&[0u8; 5 * BlsScalar::SIZE]).unwrap();
+    let mut u_one_z_zero_bytes = [0u8; 5 * BlsScalar::SIZE];
+    u_one_z_zero_bytes[..BlsScalar::SIZE]
+        .copy_from_slice(&BlsScalar::one().to_bytes());
+    let u_one_z_zero: JubJubExtended =
+        rkyv::from_bytes(&u_one_z_zero_bytes).unwrap();
+
+    for bad in [zero_all, u_one_z_zero] {
+        assert!(!bool::from(bad.is_on_curve()));
+        assert!(Encryption::new(bad, pk).is_err());
+        assert!(Encryption::new(pk, bad).is_err());
+        assert!(Encryption::encrypt(&bad, &message, None, &one).is_err());
+        assert!(Encryption::encrypt(&pk, &bad, None, &one).is_err());
+        assert!(Encryption::encrypt(&pk, &message, Some(&bad), &one).is_err());
+        assert!(Encryption::encrypt_u64(&bad, &1234, None, &one).is_err());
+        assert!(Encryption::encrypt_u64(&pk, &1234, Some(&bad), &one).is_err());
+    }
+}
+
+#[test]
 fn test_bytes() {
     let mut rng = StdRng::seed_from_u64(0xc0b);
     let point = GENERATOR_EXTENDED * &JubJubScalar::random(&mut rng);

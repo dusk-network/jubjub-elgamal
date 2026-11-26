@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Reject off-curve points in `Encryption::new`, `Encryption::encrypt`, and
+  `Encryption::encrypt_u64` [#47]
+
 ## [0.6.0] - 2026-10-08
 
 ### Changed
@@ -89,6 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add initial implementation [#1]
 
 <!-- ISSUES -->
+[#47]: https://github.com/dusk-network/jubjub-elgamal/issues/47
 [#38]: https://github.com/dusk-network/jubjub-elgamal/issues/38
 [#37]: https://github.com/dusk-network/jubjub-elgamal/issues/37
 [#32]: https://github.com/dusk-network/jubjub-elgamal/issues/32
