@@ -133,15 +133,23 @@ impl<D: Fallible + ?Sized> Deserialize<Encryption, D> for ArchivedEncryption {
 }
 
 impl Encryption {
-    /// Creates a new [`Encryption`] from two points
+    /// Creates a new [`Encryption`] from two points.
+    ///
+    /// ## Errors
+    /// Returns [`DuskBytesError::InvalidData`] if either point is not on the
+    /// curve or is not of prime order.
     pub fn new(
         ciphertext_1: JubJubExtended,
         ciphertext_2: JubJubExtended,
     ) -> Result<Self, DuskBytesError> {
-        if !bool::from(ciphertext_1.is_prime_order()) {
+        if !bool::from(
+            ciphertext_1.is_on_curve() & ciphertext_1.is_prime_order(),
+        ) {
             return Err(DuskBytesError::InvalidData);
         }
-        if !bool::from(ciphertext_2.is_prime_order()) {
+        if !bool::from(
+            ciphertext_2.is_on_curve() & ciphertext_2.is_prime_order(),
+        ) {
             return Err(DuskBytesError::InvalidData);
         }
 
@@ -171,10 +179,11 @@ impl Encryption {
     /// Returns an [`Encryption`] plus the computed shared key.
     ///
     /// ## Errors
-    /// Returns [`DuskBytesError::InvalidData`] if a ciphertext component is
-    /// not of prime order, as [`Encryption::new`] would, for example for a
-    /// zero `r`, or if the shared key is the identity, as for an identity
-    /// `public_key`. The check is on the components and the shared key, so
+    /// Returns [`DuskBytesError::InvalidData`] if any input point is not on
+    /// the curve, if a ciphertext component is not of prime order, as
+    /// [`Encryption::new`] would (for example for a zero `r`), or if the
+    /// shared key is the identity (as for an identity `public_key`). The
+    /// subgroup check is on the components and the shared key, so on-curve
     /// inputs outside the prime-order subgroup are not always rejected.
     pub fn encrypt(
         public_key: &JubJubExtended,
@@ -182,6 +191,15 @@ impl Encryption {
         generator: Option<&JubJubExtended>,
         r: &JubJubScalar,
     ) -> Result<(Self, JubJubExtended), DuskBytesError> {
+        if !bool::from(public_key.is_on_curve() & plaintext.is_on_curve()) {
+            return Err(DuskBytesError::InvalidData);
+        }
+        if let Some(generator) = generator
+            && !bool::from(generator.is_on_curve())
+        {
+            return Err(DuskBytesError::InvalidData);
+        }
+
         // A multiple of the default generator is in the prime-order subgroup,
         // so it only has to differ from the identity.
         let (ciphertext_1, c1_prime_order) = match generator {
